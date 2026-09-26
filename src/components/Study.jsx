@@ -356,9 +356,10 @@ export default function Study({
                     </Button>
                   </div>
                   <div className="sheet-content" key={card.id}>
-                    <h1>{card.title}</h1>
+                    <h1 style={{ textAlign: card.align || 'center' }}>{card.title}</h1>
                     <MaskedText
                       body={card.body}
+                      align={card.align}
                       revealed={revealed}
                       onToggle={toggle}
                     />

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { masksIn, plainText } from '../lib/masks'
+import { markdownExcerpt } from '../lib/markdown'
 
 export default function Library({
   decks,
@@ -231,7 +232,7 @@ export default function Library({
                     <span className="card-row-content">
                       <strong>{card.title}</strong>
                       <span className="card-excerpt">
-                        {plainText(card.body).replace(/\n/g, ' ')}
+                        {markdownExcerpt(card.body)}
                       </span>
                       <span className="card-meta">
                         빈칸 {masksIn(card.body).length}개

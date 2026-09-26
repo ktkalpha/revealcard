@@ -18,7 +18,10 @@
     "lucide-react": "^0.468.0",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.4",
-    "class-variance-authority": "^0.7.1"
+    "class-variance-authority": "^0.7.1",
+    "react-markdown": "^10.1.0",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {}
 }

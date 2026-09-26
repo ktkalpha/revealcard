@@ -8,7 +8,11 @@ export function exportCardSet(cards, name = '나의 암기 카드') {
     format: CARD_SET_FORMAT,
     version: CARD_SET_VERSION,
     name,
-    cards: cards.map(({ title, body }) => ({ title, body })),
+    cards: cards.map(({ title, body, align }) => ({
+      title,
+      body,
+      ...(align && align !== 'center' ? { align } : {}),
+    })),
   }
 }
 
@@ -45,9 +49,15 @@ export function parseCardSet(text) {
     }
     if (card.title.length > 200 || card.body.length > 20000)
       throw new Error(`${index + 1}번 카드가 너무 깁니다.`)
+    if (card.align !== undefined && !['left', 'center', 'right'].includes(card.align))
+      throw new Error(`${index + 1}번 카드의 정렬 값이 올바르지 않습니다.`)
     const error = bodyError(card.body)
     if (error) throw new Error(`${index + 1}번 카드: ${error}`)
-    return { title: card.title, body: card.body }
+    return {
+      title: card.title,
+      body: card.body,
+      ...(card.align && card.align !== 'center' ? { align: card.align } : {}),
+    }
   })
   return { name: data.name.trim(), cards }
 }

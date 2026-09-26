@@ -394,14 +394,82 @@ button svg {
   word-break: keep-all;
 }
 .study-text {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: keep-all;
-  text-align: center;
   font-size: 20px;
-  line-height: 2.6;
+  line-height: 2.1;
   letter-spacing: -0.035em;
   font-weight: 500;
+}
+.study-text p {
+  margin: 0 0 0.65em;
+  white-space: pre-wrap;
+}
+.study-text > :last-child {
+  margin-bottom: 0;
+}
+.study-text h1,
+.study-text h2,
+.study-text h3 {
+  font-size: 1.15em;
+  line-height: 1.5;
+  margin: 0.8em 0 0.35em;
+}
+.study-text ul,
+.study-text ol {
+  list-style-position: inside;
+  padding: 0;
+  margin: 0.4em 0 0.8em;
+}
+.study-text li > p {
+  display: inline;
+}
+.study-text blockquote {
+  border-left: 3px solid #9cae92;
+  margin: 0.7em 0;
+  padding: 0.1em 0.8em;
+  background: #f2f5ef;
+}
+.study-text a {
+  color: #386d68;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.study-text code {
+  font-size: 0.8em;
+  background: #eaf0ec;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.study-text pre {
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  padding: 12px;
+  background: #f1f3ef;
+  font-size: 0.8em;
+}
+.study-text pre code {
+  padding: 0;
+  background: none;
+}
+.study-text table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.8em;
+  line-height: 1.5;
+  margin: 0.7em auto;
+  max-width: 100%;
+}
+.study-text th,
+.study-text td {
+  border: 1px solid #cbd5c7;
+  padding: 5px 9px;
+}
+.study-text input[type='checkbox'] {
+  vertical-align: middle;
 }
 .mask {
   position: relative;
@@ -1074,6 +1142,22 @@ kbd {
   font-size: 10px;
   color: #8b937d;
 }
+.alignment-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #474e3c;
+}
+.alignment-control .segmented button {
+  width: 36px;
+  height: 32px;
+  min-height: 32px;
+  justify-content: center;
+  padding: 5px;
+}
 .field-hint {
   font-size: 11px;
   color: #858d76;
@@ -1114,6 +1198,17 @@ kbd {
   width: 34px;
   min-width: 34px;
   height: 34px;
+}
+.format-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px 5px;
+  border-bottom: 1px solid #e1e6d6;
+  background: #fafbf8;
+}
+.format-toolbar .button {
+  width: 34px;
+  height: 32px;
 }
 .writing-area textarea {
   display: block;
