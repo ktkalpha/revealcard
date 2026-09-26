@@ -11,6 +11,8 @@ import {
   Plus,
   RotateCcw,
   Search,
+  LockKeyhole,
+  Globe2,
   Trash2,
   X,
 } from 'lucide-react'
@@ -21,6 +23,7 @@ import { markdownExcerpt } from '../lib/markdown'
 export default function Library({
   decks,
   deck,
+  user,
   ratings,
   onDeck,
   onStudy,
@@ -31,6 +34,9 @@ export default function Library({
   onCreateDeck,
   onRenameDeck,
   onDeleteDeck,
+  onVisibility,
+  onMigrate,
+  showMigration,
   onExport,
   onImport,
 }) {
@@ -45,22 +51,42 @@ export default function Library({
   )
   const known = deck.cards.filter((c) => ratings[c.id] === 'known').length
   const again = deck.cards.filter((c) => ratings[c.id] === 'again').length
+  const publicDecks = decks.filter((item) => item.visibility === 'public')
+  const privateDecks = decks.filter((item) => item.visibility === 'private')
+  const deckButton = (item) => (
+    <button
+      key={item.id}
+      className={`deck-item ${item.id === deck.id ? 'selected' : ''}`}
+      aria-pressed={item.id === deck.id}
+      onClick={() => {
+        onDeck(item.id)
+        setSearch('')
+        setFilter('all')
+      }}
+    >
+      {item.visibility === 'public' ? <Globe2 size={17} /> : <LockKeyhole size={17} />}
+      <span>{item.name}</span>
+      <small>{item.cards.length}</small>
+    </button>
+  )
   return (
     <main id="main" className="library-page">
       <div className="section-heading">
         <div>
           <p className="overline">YOUR COLLECTION</p>
-          <h1>내 카드</h1>
-          <p className="muted">기억할 내용을 모으고, 필요한 만큼 반복하세요.</p>
+          <h1>{user ? '내 카드' : '공개 카드'}</h1>
+          <p className="muted">
+            {user ? `${user.username}의 카드와 서버의 공개 카드 셋` : '서버에 공개된 카드 셋'}
+          </p>
         </div>
         <div className="library-actions">
           <Button variant="outline" onClick={onImport}>
             <FileUp size={17} /> 불러오기
           </Button>
-          <Button variant="outline" onClick={onAdd}>
+          <Button variant="outline" onClick={onAdd} disabled={!!user && !deck.canEdit && decks.some((item) => item.canEdit)}>
             <Plus size={17} /> 한 장 만들기
           </Button>
-          <Button onClick={onBulk} disabled={deck.cards.length >= 1000}>
+          <Button onClick={onBulk} disabled={deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
             <Plus size={17} /> 여러 장 만들기
           </Button>
         </div>
@@ -81,22 +107,10 @@ export default function Library({
             </Button>
           </div>
           <div className="desktop-decks">
-            {decks.map((d) => (
-              <button
-                key={d.id}
-                className={`deck-item ${d.id === deck.id ? 'selected' : ''}`}
-                aria-pressed={d.id === deck.id}
-                onClick={() => {
-                  onDeck(d.id)
-                  setSearch('')
-                  setFilter('all')
-                }}
-              >
-                <BookOpen size={17} />
-                <span>{d.name}</span>
-                <small>{d.cards.length}</small>
-              </button>
-            ))}
+            {!!publicDecks.length && <p className="deck-group-label">공개 카드 셋</p>}
+            {publicDecks.map(deckButton)}
+            {!!privateDecks.length && <p className="deck-group-label">내 비공개 카드 셋</p>}
+            {privateDecks.map(deckButton)}
           </div>
           <div className="mobile-decks">
             <select
@@ -108,37 +122,57 @@ export default function Library({
                 setFilter('all')
               }}
             >
-              {decks.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} · {d.cards.length}장
-                </option>
-              ))}
+              <option value="" disabled hidden>카드 셋 선택</option>
+              <optgroup label="공개 카드 셋">
+                {publicDecks.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.cards.length}장</option>)}
+              </optgroup>
+              {user && <optgroup label="내 비공개 카드 셋">
+                {privateDecks.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.cards.length}장</option>)}
+              </optgroup>}
             </select>
             <ChevronDown size={15} />
           </div>
           <p className="storage-note">
-            이 브라우저에 자동 저장돼요.
+            카드 셋은 이 서버에 저장돼요.
             <br />
-            파일로 내보내면 다른 기기에서도 학습할 수 있어요.
+            비공개 셋은 로그인한 소유자만 볼 수 있어요.
           </p>
+          {showMigration && (
+            <Button className="migration-button" variant="outline" size="sm" onClick={onMigrate}>
+              브라우저 카드 가져오기
+            </Button>
+          )}
         </aside>
         <section className="collection-panel">
           <div className="collection-heading">
             <div>
               <h2>
                 {deck.name}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="카드 셋 이름 변경"
-                  onClick={onRenameDeck}
-                >
-                  <Pencil size={14} />
-                </Button>
+                {deck.canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="카드 셋 이름 변경"
+                    onClick={onRenameDeck}
+                  >
+                    <Pencil size={14} />
+                  </Button>
+                )}
               </h2>
               <p>
                 {deck.cards.length}장 <span>·</span> 기억한 카드 {known}장
+                {deck.ownerName && <><span>·</span> {deck.ownerName}</>}
               </p>
+              {deck.canEdit && (
+                <div className="segmented visibility-control" role="group" aria-label="카드 셋 공개 설정">
+                  <button aria-pressed={deck.visibility === 'private'} onClick={() => onVisibility('private')}>
+                    <LockKeyhole size={14} /> 비공개
+                  </button>
+                  <button aria-pressed={deck.visibility === 'public'} onClick={() => onVisibility('public')}>
+                    <Globe2 size={14} /> 공개
+                  </button>
+                </div>
+              )}
             </div>
             <Button onClick={() => onStudy()} disabled={!deck.cards.length}>
               <Play size={16} /> 학습하기
@@ -197,14 +231,14 @@ export default function Library({
                   ? '검색 결과가 없어요'
                   : filter === 'again'
                     ? '다시 볼 카드가 없어요'
-                    : '아직 카드가 없어요'}
+                    : decks.length ? '아직 카드가 없어요' : '공개된 카드 셋이 없어요'}
               </h3>
               <p>
                 {search
                   ? '다른 단어나 짧은 검색어로 찾아보세요.'
                   : filter === 'again'
                     ? '학습 중 다시 보고 싶은 카드를 표시하세요.'
-                    : '직접 만들거나 카드 셋 파일을 불러오세요.'}
+                    : user ? '카드를 만들거나 카드 셋 파일을 불러오세요.' : '로그인하면 나만의 카드 셋을 만들 수 있어요.'}
               </p>
               {search ? (
                 <Button variant="outline" onClick={() => setSearch('')}>
@@ -212,9 +246,11 @@ export default function Library({
                 </Button>
               ) : (
                 filter === 'all' && (
-                  <Button onClick={onBulk}>
-                    <Plus size={16} /> 카드 여러 장 만들기
-                  </Button>
+                  (deck.canEdit || !decks.length) && (
+                    <Button onClick={onBulk}>
+                      <Plus size={16} /> {user ? '카드 여러 장 만들기' : '로그인'}
+                    </Button>
+                  )
                 )
               )}
             </div>
@@ -251,7 +287,7 @@ export default function Library({
                       </span>
                     </span>
                   </button>
-                  <div className="card-row-actions">
+                  {deck.canEdit && <div className="card-row-actions">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -268,21 +304,31 @@ export default function Library({
                     >
                       <Trash2 size={16} />
                     </Button>
-                  </div>
+                  </div>}
                 </li>
               ))}
             </ol>
           )}
           <div className="collection-bottom">
-            <span>카드 셋을 파일로 공유해 함께 학습하세요.</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="danger-text"
-              onClick={onDeleteDeck}
-            >
-              <Trash2 size={14} /> 카드 셋 삭제
-            </Button>
+            <span>
+              {!decks.length
+                ? user
+                  ? '새 카드 셋을 만들거나 공개 셋을 기다려 주세요.'
+                  : '공개된 카드 셋을 기다려 주세요.'
+                : deck.visibility === 'public'
+                  ? '이 서버의 누구나 이 카드 셋을 학습할 수 있어요.'
+                  : '비공개 셋은 소유자만 볼 수 있어요.'}
+            </span>
+            {deck.canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="danger-text"
+                onClick={onDeleteDeck}
+              >
+                <Trash2 size={14} /> 카드 셋 삭제
+              </Button>
+            )}
           </div>
         </section>
       </div>

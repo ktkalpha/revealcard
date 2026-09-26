@@ -223,6 +223,28 @@ button svg {
 .header-add {
   justify-self: end;
 }
+.header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-actions .button-ghost {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-actions .button-ghost span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.loading-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
 .skip-link {
   position: fixed;
   top: -80px;
@@ -881,6 +903,20 @@ kbd {
 .deck-item:hover {
   background: #eef0e7;
 }
+.deck-group-label {
+  color: #828c7a;
+  font-size: 10px;
+  font-weight: 650;
+  margin: 18px 9px 6px;
+}
+.deck-group-label:first-child {
+  margin-top: 5px;
+}
+.migration-button {
+  width: 100%;
+  margin-top: 14px;
+  white-space: normal;
+}
 .storage-note {
   border-top: 1px solid var(--line);
   padding-top: 19px;
@@ -920,6 +956,24 @@ kbd {
 }
 .collection-heading p span {
   padding: 0 6px;
+}
+.visibility-control {
+  margin-top: 11px;
+}
+.visibility-control button {
+  min-height: 30px;
+  padding: 5px 9px;
+}
+.auth-modes {
+  width: 100%;
+  margin-bottom: 22px;
+}
+.auth-modes button {
+  flex: 1;
+  justify-content: center;
+}
+.auth-modes + form .form-label:not(:first-child) {
+  margin-top: 17px;
 }
 .collection-tools {
   display: flex;
@@ -1615,6 +1669,17 @@ footer span:first-child {
   .header-add span {
     display: none;
   }
+  .header-actions {
+    gap: 2px;
+  }
+  .header-actions .button-ghost {
+    width: 34px;
+    min-height: 36px;
+    padding: 0;
+  }
+  .header-actions .button-ghost span {
+    display: none;
+  }
   .study-page {
     width: calc(100% - 32px);
     padding-top: 15px;
@@ -1783,6 +1848,9 @@ footer span:first-child {
     display: flex;
     position: relative;
     min-width: 0;
+  }
+  .deck-sidebar .migration-button {
+    grid-column: 1 / -1;
   }
   .mobile-decks select {
     width: 100%;

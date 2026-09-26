@@ -19,6 +19,7 @@ export default function BulkEditor({ deck, onSave, onExit }) {
   const [attempted, setAttempted] = useState(false)
   const [message, setMessage] = useState('')
   const [autosaved, setAutosaved] = useState(true)
+  const [saving, setSaving] = useState(false)
   const grid = useRef(null)
   const nextFocus = useRef(null)
   const filled = rows.filter((row) => row.title.trim() || row.body.trim())
@@ -109,7 +110,8 @@ export default function BulkEditor({ deck, onSave, onExit }) {
     })
     setMessage(`${table.length}행을 붙여넣었어요.`)
   }
-  const save = () => {
+  const save = async () => {
+    if (saving) return
     setAttempted(true)
     const firstError = errors.findIndex(Boolean)
     if (firstError >= 0) {
@@ -122,8 +124,13 @@ export default function BulkEditor({ deck, onSave, onExit }) {
       setMessage(`이 셋에는 ${available}장까지만 추가할 수 있어요.`)
       return
     }
-    if (onSave(filled.map((row) => ({ title: row.title.trim(), body: row.body }))))
-      localStorage.removeItem(bulkDraftKey(deck.id))
+    setSaving(true)
+    try {
+      if (await onSave(filled.map((row) => ({ title: row.title.trim(), body: row.body }))))
+        localStorage.removeItem(bulkDraftKey(deck.id))
+    } finally {
+      setSaving(false)
+    }
   }
   const discard = () => {
     if (filled.length && !window.confirm('작성 중인 카드들을 모두 버릴까요?')) return
@@ -148,7 +155,7 @@ export default function BulkEditor({ deck, onSave, onExit }) {
           <p className="overline">{deck.name}</p>
           <h1>카드 여러 장 만들기</h1>
         </div>
-        <Button onClick={save} disabled={!filled.length}>
+        <Button onClick={save} disabled={!filled.length || saving}>
           <Check size={17} /> {filled.length}장 저장
         </Button>
       </div>
@@ -236,7 +243,7 @@ export default function BulkEditor({ deck, onSave, onExit }) {
         >
           {message}
         </p>
-        <Button onClick={save} disabled={!filled.length}><Check size={17} /> {filled.length}장 저장</Button>
+        <Button onClick={save} disabled={!filled.length || saving}><Check size={17} /> {filled.length}장 저장</Button>
       </div>
     </main>
   )

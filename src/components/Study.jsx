@@ -345,15 +345,17 @@ export default function Study({
                     <span className="overline">
                       CARD {String(cursor + 1).padStart(2, '0')}
                     </span>
-                    <Button
-                      data-no-swipe
-                      variant="ghost"
-                      size="icon"
-                      aria-label="현재 카드 수정"
-                      onClick={() => onEdit(card)}
-                    >
-                      <Pencil size={16} />
-                    </Button>
+                    {onEdit && (
+                      <Button
+                        data-no-swipe
+                        variant="ghost"
+                        size="icon"
+                        aria-label="현재 카드 수정"
+                        onClick={() => onEdit(card)}
+                      >
+                        <Pencil size={16} />
+                      </Button>
+                    )}
                   </div>
                   <div className="sheet-content" key={card.id}>
                     <h1 style={{ textAlign: card.align || 'center' }}>{card.title}</h1>

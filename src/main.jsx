@@ -1,14 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, Check, Layers3, Plus, RotateCcw, X } from 'lucide-react'
+import { Check, Layers3, LogIn, LogOut, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
 import BulkEditor from './components/BulkEditor'
+import AuthDialog from './components/AuthDialog'
 import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
+import { api } from './lib/api'
 import {
   DRAFT_KEY,
   STORAGE_KEY,
@@ -19,43 +21,103 @@ import {
 import './style.css'
 
 function App() {
-  const [initial] = useState(() => loadLibrary(window.localStorage))
-  const [library, setLibrary] = useState(initial.data)
+  const [library, setLibrary] = useState({
+    decks: [], selectedDeckId: null, ratings: {}, positions: {},
+  })
+  const [user, setUser] = useState(null)
+  const [loaded, setLoaded] = useState(false)
   const [view, setView] = useState('study')
-  const [draft, setDraft] = useState(() => loadDraft(window.localStorage))
+  const [draft, setDraft] = useState(null)
+  const [draftOwner, setDraftOwner] = useState(null)
   const [autosaved, setAutosaved] = useState(false)
-  const [storageError, setStorageError] = useState(initial.error)
+  const [serverError, setServerError] = useState('')
   const [modal, setModal] = useState(null)
   const [notice, setNotice] = useState(null)
   const [sessionVersion, setSessionVersion] = useState(0)
   const [fileBusy, setFileBusy] = useState(false)
   const fileInput = useRef(null)
+  const busy = useRef(false)
+  const requestVersion = useRef(0)
+  const hasLegacy = (() => {
+    try {
+      return !!(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('revealcard.cards'))
+    } catch {
+      return false
+    }
+  })()
   const deck =
     library.decks.find((d) => d.id === library.selectedDeckId) ||
-    library.decks[0]
+    library.decks[0] ||
+    { id: '', name: '카드 셋', cards: [], canEdit: false }
   const notify = (text, undo) => setNotice({ text, undo, id: uid() })
 
+  const refresh = useCallback(async (preferredId) => {
+    const version = ++requestVersion.current
+    const next = await api('/api/bootstrap')
+    if (version !== requestVersion.current) return
+    setUser(next.user)
+    setLibrary((prev) => ({
+      ...prev,
+      decks: next.decks,
+      selectedDeckId:
+        [preferredId, prev.selectedDeckId].find((id) =>
+          next.decks.some((item) => item.id === id),
+        ) || next.decks[0]?.id || null,
+    }))
+    setServerError('')
+    setLoaded(true)
+  }, [])
   useEffect(() => {
-    if (initial.error) return
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(library))
-      setStorageError('')
-    } catch {
-      setStorageError(
-        '브라우저에 저장할 공간이 부족하거나 저장이 차단됐어요. 현재 카드를 내보내기로 보관해 주세요.',
-      )
+    refresh().catch(() => {
+      setServerError('서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
+      setLoaded(true)
+    })
+    const timer = setInterval(() => {
+      if (!busy.current) refresh().catch(() => setServerError('서버 연결을 확인해 주세요.'))
+    }, 15000)
+    const onFocus = () => refresh().catch(() => setServerError('서버 연결을 확인해 주세요.'))
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
     }
-  }, [library, initial.error])
+  }, [refresh])
   useEffect(() => {
+    const key = `revealcard.progress.v1.${user?.id || 'guest'}`
+    try {
+      const progress = JSON.parse(localStorage.getItem(key) || '{}')
+      setLibrary((prev) => ({
+        ...prev, ratings: progress.ratings || {}, positions: progress.positions || {},
+      }))
+    } catch {
+      setLibrary((prev) => ({ ...prev, ratings: {}, positions: {} }))
+    }
+    setDraft(user ? loadDraft(localStorage, `${DRAFT_KEY}.${user.id}`) : null)
+    setDraftOwner(user?.id || null)
+  }, [user?.id])
+  useEffect(() => {
+    if (!loaded) return
+    try {
+      localStorage.setItem(
+        `revealcard.progress.v1.${user?.id || 'guest'}`,
+        JSON.stringify({ ratings: library.ratings, positions: library.positions }),
+      )
+    } catch {
+      // Card sets remain safely stored on the server.
+    }
+  }, [library.ratings, library.positions, user?.id, loaded])
+  useEffect(() => {
+    if (!user || draftOwner !== user.id) return
     setAutosaved(false)
     try {
-      if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-      else localStorage.removeItem(DRAFT_KEY)
+      const key = `${DRAFT_KEY}.${user.id}`
+      if (draft) localStorage.setItem(key, JSON.stringify(draft))
+      else localStorage.removeItem(key)
       setAutosaved(!!draft)
     } catch {
       setAutosaved(false)
     }
-  }, [draft])
+  }, [draft, draftOwner, user?.id])
   useEffect(() => {
     if (!notice || notice.undo) return
     const timeout = setTimeout(() => setNotice(null), 4500)
@@ -71,11 +133,32 @@ function App() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [draft, autosaved])
 
-  const updateDeck = (id, fn) =>
-    setLibrary((prev) => ({
-      ...prev,
-      decks: prev.decks.map((d) => (d.id === id ? fn(d) : d)),
-    }))
+  const run = async (action, preferredId) => {
+    if (busy.current) return null
+    busy.current = true
+    try {
+      const result = await action()
+      try {
+        await refresh(preferredId || result.id)
+      } catch {
+        setServerError('저장됐지만 목록을 새로 읽지 못했어요. 다시 연결해 주세요.')
+      }
+      return result
+    } catch (error) {
+      notify(error.message)
+      return null
+    } finally {
+      busy.current = false
+    }
+  }
+  const requireOwner = () => {
+    if (!user) setModal({ type: 'auth' })
+    else if (!deck.canEdit) {
+      if (!library.decks.some((item) => item.canEdit)) setModal({ type: 'create' })
+      else notify('내 카드 셋을 선택하거나 새 셋을 만들어 주세요.')
+    }
+    return !!user && !!deck.canEdit
+  }
   const selectDeck = (id) =>
     setLibrary((prev) => ({ ...prev, selectedDeckId: id }))
   const study = (cardId) => {
@@ -99,6 +182,7 @@ function App() {
       ratings: { ...prev.ratings, [id]: value },
     }))
   const openEditor = (card) => {
+    if (!requireOwner()) return
     if (!card && deck.cards.length >= 1000) {
       notify(
         '한 카드 셋은 최대 1,000장까지 담을 수 있어요. 새 셋을 만들어 주세요.',
@@ -121,8 +205,12 @@ function App() {
     setDraft(draft && card && draft.card.id === card.id ? draft : next)
     setView('edit')
   }
-  const saveDraft = () => {
-    const target = library.decks.find((d) => d.id === draft.deckId) || deck
+  const saveDraft = async () => {
+    const target = library.decks.find((d) => d.id === draft.deckId)
+    if (!target?.canEdit) {
+      notify('이 카드 셋을 수정할 수 없어요.')
+      return
+    }
     if (
       !target.cards.some((c) => c.id === draft.card.id) &&
       target.cards.length >= 1000
@@ -131,83 +219,62 @@ function App() {
       return
     }
     const saved = { ...draft.card, title: draft.card.title.trim() }
-    setLibrary((prev) => ({
-      ...prev,
-      selectedDeckId: target.id,
-      decks: prev.decks.map((d) =>
-        d.id === target.id
-          ? {
-              ...d,
-              cards: d.cards.some((c) => c.id === saved.id)
-                ? d.cards.map((c) => (c.id === saved.id ? saved : c))
-                : [...d.cards, saved],
-            }
-          : d,
+    const existing = target.cards.some((card) => card.id === saved.id)
+    const result = await run(
+      () => api(
+        `/api/decks/${target.id}/cards${existing ? `/${saved.id}` : ''}`,
+        { method: existing ? 'PUT' : 'POST', body: existing ? saved : { cards: [saved] } },
       ),
-      positions: { ...prev.positions, [target.id]: saved.id },
-      ratings: Object.fromEntries(
-        Object.entries(prev.ratings).filter(([id]) => id !== saved.id),
-      ),
-    }))
+      target.id,
+    )
+    if (!result) return
     setDraft(null)
     setView('library')
     notify('카드를 저장했어요.')
   }
-  const saveBulk = (cards) => {
+  const saveBulk = async (cards) => {
+    if (!requireOwner()) return false
     if (cards.length > 1000 - deck.cards.length) {
       notify('카드 셋에 남은 공간을 확인해 주세요.')
       return false
     }
-    updateDeck(deck.id, (d) => ({
-      ...d,
-      cards: [...d.cards, ...cards.map((card) => ({ ...card, id: uid() }))],
-    }))
+    const result = await run(
+      () => api(`/api/decks/${deck.id}/cards`, { method: 'POST', body: { cards } }),
+      deck.id,
+    )
+    if (!result) return false
     setView('library')
     notify(`${cards.length}장의 카드를 저장했어요.`)
     return true
   }
-  const deleteCard = (card) => {
+  const deleteCard = async (card) => {
     const targetId = deck.id,
       index = deck.cards.findIndex((c) => c.id === card.id)
-    updateDeck(targetId, (d) => ({
-      ...d,
-      cards: d.cards.filter((c) => c.id !== card.id),
-    }))
+    if (!await run(() => api(`/api/decks/${targetId}/cards/${card.id}`, { method: 'DELETE' }), targetId))
+      return
     setModal(null)
-    notify('카드를 삭제했어요.', () => {
-      updateDeck(targetId, (d) => {
-        if (d.cards.some((c) => c.id === card.id)) return d
-        const cards = [...d.cards]
-        cards.splice(Math.min(index, cards.length), 0, card)
-        return { ...d, cards }
-      })
+    notify('카드를 삭제했어요.', async () => {
+      await run(
+        () => api(`/api/decks/${targetId}/cards`, {
+          method: 'POST', body: { cards: [card], index },
+        }),
+        targetId,
+      )
       setNotice(null)
     })
   }
-  const deleteDeck = () => {
-    const deleted = deck,
-      index = library.decks.findIndex((d) => d.id === deck.id)
-    const replacement = { id: uid(), name: '나의 암기 카드', cards: [] }
-    setLibrary((prev) => {
-      const remaining = prev.decks.filter((d) => d.id !== deleted.id)
-      return {
-        ...prev,
-        decks: remaining.length ? remaining : [replacement],
-        selectedDeckId: remaining[0]?.id || replacement.id,
-      }
-    })
+  const deleteDeck = async () => {
+    const deleted = deck
+    if (!await run(() => api(`/api/decks/${deleted.id}`, { method: 'DELETE' })))
+      return
     setModal(null)
-    notify('카드 셋을 삭제했어요.', () => {
-      setLibrary((prev) => {
-        const decks = prev.decks.filter(
-          (d) =>
-            d.id !== replacement.id ||
-            d.cards.length ||
-            d.name !== replacement.name,
-        )
-        decks.splice(Math.min(index, decks.length), 0, deleted)
-        return { ...prev, decks, selectedDeckId: deleted.id }
-      })
+    notify('카드 셋을 삭제했어요.', async () => {
+      await run(() => api('/api/decks', {
+        method: 'POST',
+        body: {
+          name: deleted.name, visibility: deleted.visibility, cards: deleted.cards,
+        },
+      }))
       setNotice(null)
     })
   }
@@ -226,32 +293,58 @@ function App() {
       setFileBusy(false)
     }
   }
-  const importSet = ({ name, cards, mode }) => {
-    if (mode === 'new') {
-      const id = uid()
-      setLibrary((prev) => ({
-        ...prev,
-        decks: [...prev.decks, { id, name, cards }],
-        selectedDeckId: id,
-      }))
-    } else updateDeck(deck.id, (d) => ({ ...d, cards: [...d.cards, ...cards] }))
+  const importSet = async ({ name, cards, mode }) => {
+    const result = await run(() => mode === 'new'
+      ? api('/api/decks', { method: 'POST', body: { name, visibility: 'private', cards } })
+      : api(`/api/decks/${deck.id}/cards`, { method: 'POST', body: { cards } }),
+      mode === 'new' ? undefined : deck.id,
+    )
+    if (!result) return
     setModal(null)
     setView('library')
     notify(`${cards.length}장의 카드를 불러왔어요.`)
   }
-  const namedSet = (name) => {
-    if (modal.type === 'rename') updateDeck(deck.id, (d) => ({ ...d, name }))
-    else {
-      const id = uid()
-      setLibrary((prev) => ({
-        ...prev,
-        decks: [...prev.decks, { id, name, cards: [] }],
-        selectedDeckId: id,
-      }))
-    }
+  const namedSet = async (name) => {
+    const result = await run(() => modal.type === 'rename'
+      ? api(`/api/decks/${deck.id}`, { method: 'PATCH', body: { name } })
+      : api('/api/decks', { method: 'POST', body: { name, visibility: 'private' } }),
+      modal.type === 'rename' ? deck.id : undefined,
+    )
+    if (!result) return
     setModal(null)
     setView('library')
   }
+  const setVisibility = async (visibility) => {
+    if (visibility === 'public' &&
+      !window.confirm('이 카드 셋을 같은 서버의 모든 사용자에게 공개할까요?'))
+      return
+    if (await run(() => api(`/api/decks/${deck.id}`, {
+      method: 'PATCH', body: { visibility },
+    }), deck.id))
+      notify(visibility === 'public' ? '카드 셋을 공개했어요.' : '카드 셋을 비공개로 바꿨어요.')
+  }
+  const migrate = async () => {
+    const legacy = loadLibrary(localStorage)
+    if (legacy.error) {
+      notify('기존 브라우저 카드를 읽지 못했어요. 파일로 먼저 보관해 주세요.')
+      return
+    }
+    const result = await run(() => api('/api/migrate', {
+      method: 'POST',
+      body: {
+        decks: legacy.data.decks.map(({ name, cards }) => ({
+          name, cards: cards.map(({ title, body, align }) => ({ title, body, align })),
+        })),
+      },
+    }))
+    if (result) {
+      setModal(null)
+      setView('library')
+      notify(`${result.count}개의 카드 셋을 비공개로 가져왔어요.`)
+    }
+  }
+  if (!loaded)
+    return <div className="loading-screen" role="status">카드 셋을 불러오는 중…</div>
   return (
     <div className="app">
       <a className="skip-link" href="#main">
@@ -286,30 +379,42 @@ function App() {
             내 카드
           </button>
         </nav>
-        <Button
-          className="header-add"
-          size="sm"
-          aria-label="새 카드 만들기"
-          onClick={() => openEditor()}
-        >
-          <Plus size={16} />
-          <span>새 카드</span>
-        </Button>
-      </header>
-      {storageError && (
-        <div className="storage-alert" role="alert">
-          {storageError}
+        <div className="header-actions">
           <Button
+            className="header-add"
             size="sm"
-            variant="outline"
-            onClick={() => setModal({ type: 'export' })}
-            disabled={!deck.cards.length}
+            aria-label="새 카드 만들기"
+            onClick={() => openEditor()}
           >
-            현재 셋 내보내기
+            <Plus size={16} />
+            <span>새 카드</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={user ? `${user.username} 로그아웃` : '로그인'}
+            onClick={async () => {
+              if (!user) setModal({ type: 'auth' })
+              else if (await run(() => api('/api/logout', { method: 'POST' }))) {
+                setView('library')
+                setDraft(null)
+              }
+            }}
+          >
+            {user ? <LogOut size={16} /> : <LogIn size={16} />}
+            <span>{user?.username || '로그인'}</span>
+          </Button>
+        </div>
+      </header>
+      {serverError && (
+        <div className="storage-alert" role="alert">
+          {serverError}
+          <Button size="sm" variant="outline" onClick={() => refresh().catch(() => {})}>
+            다시 연결
           </Button>
         </div>
       )}
-      {draft && view !== 'edit' && (
+      {draft && user && view !== 'edit' && (
         <div className="draft-banner">
           <span>작성 중인 카드가 있어요.</span>
           <button
@@ -343,10 +448,10 @@ function App() {
           onDeck={selectDeck}
           onRate={rate}
           onPosition={position}
-          onEdit={openEditor}
+          onEdit={deck.canEdit ? openEditor : null}
           onLibrary={() => setView('library')}
           onAdd={() => openEditor()}
-          onImport={() => fileInput.current.click()}
+          onImport={() => user ? fileInput.current.click() : setModal({ type: 'auth' })}
           modalOpen={!!modal}
         />
       )}
@@ -354,18 +459,22 @@ function App() {
         <Library
           decks={library.decks}
           deck={deck}
+          user={user}
           ratings={library.ratings}
           onDeck={selectDeck}
           onStudy={study}
           onAdd={() => openEditor()}
-          onBulk={() => setView('bulk')}
+          onBulk={() => requireOwner() && setView('bulk')}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
-          onCreateDeck={() => setModal({ type: 'create' })}
-          onRenameDeck={() => setModal({ type: 'rename' })}
-          onDeleteDeck={() => setModal({ type: 'delete-deck' })}
+          onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
+          onRenameDeck={() => deck.canEdit && setModal({ type: 'rename' })}
+          onDeleteDeck={() => deck.canEdit && setModal({ type: 'delete-deck' })}
+          onVisibility={setVisibility}
+          onMigrate={() => setModal({ type: 'migrate' })}
+          showMigration={!!user && !user.migrated && hasLegacy}
           onExport={() => setModal({ type: 'export' })}
-          onImport={() => fileInput.current.click()}
+          onImport={() => user ? fileInput.current.click() : setModal({ type: 'auth' })}
         />
       )}
       {view === 'edit' && draft && (
@@ -420,6 +529,28 @@ function App() {
           onClose={() => setModal(null)}
           onImport={importSet}
         />
+      )}
+      {modal?.type === 'auth' && (
+        <AuthDialog
+          onClose={() => setModal(null)}
+          onSuccess={async () => {
+            await refresh()
+            setModal(null)
+            setView('library')
+          }}
+        />
+      )}
+      {modal?.type === 'migrate' && (
+        <Modal title="브라우저 카드 가져오기" onClose={() => setModal(null)}>
+          <p className="modal-description">
+            이 브라우저에 저장된 카드 셋을 현재 계정으로 가져옵니다.
+            모두 비공개로 시작하며 기존 브라우저 데이터는 지우지 않아요.
+          </p>
+          <div className="dialog-actions">
+            <Button variant="outline" onClick={() => setModal(null)}>취소</Button>
+            <Button onClick={migrate}>비공개로 가져오기</Button>
+          </div>
+        </Modal>
       )}
       {['create', 'rename'].includes(modal?.type) && (
         <NameDialog

@@ -143,7 +143,7 @@ export function ImportDialog({ data, deck, onClose, onImport }) {
                 checked={mode === 'new'}
                 onChange={() => setMode('new')}
               />
-              새 카드 셋으로 만들기
+              새 비공개 카드 셋으로 만들기
             </label>
             <label>
               <input
@@ -151,6 +151,7 @@ export function ImportDialog({ data, deck, onClose, onImport }) {
                 name="import-mode"
                 value="append"
                 checked={mode === 'append'}
+                disabled={!deck.canEdit}
                 onChange={() => setMode('append')}
               />
               <span>
