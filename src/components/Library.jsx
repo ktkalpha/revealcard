@@ -24,6 +24,7 @@ export default function Library({
   onDeck,
   onStudy,
   onAdd,
+  onBulk,
   onEdit,
   onDelete,
   onCreateDeck,
@@ -55,8 +56,11 @@ export default function Library({
           <Button variant="outline" onClick={onImport}>
             <FileUp size={17} /> 불러오기
           </Button>
-          <Button onClick={onAdd}>
-            <Plus size={17} /> 카드 추가
+          <Button variant="outline" onClick={onAdd}>
+            <Plus size={17} /> 한 장 만들기
+          </Button>
+          <Button onClick={onBulk} disabled={deck.cards.length >= 1000}>
+            <Plus size={17} /> 여러 장 만들기
           </Button>
         </div>
       </div>
@@ -207,8 +211,8 @@ export default function Library({
                 </Button>
               ) : (
                 filter === 'all' && (
-                  <Button onClick={onAdd}>
-                    <Plus size={16} /> 첫 카드 만들기
+                  <Button onClick={onBulk}>
+                    <Plus size={16} /> 카드 여러 장 만들기
                   </Button>
                 )
               )}

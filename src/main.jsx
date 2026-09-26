@@ -5,6 +5,7 @@ import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
+import BulkEditor from './components/BulkEditor'
 import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
@@ -151,6 +152,19 @@ function App() {
     setDraft(null)
     setView('library')
     notify('카드를 저장했어요.')
+  }
+  const saveBulk = (cards) => {
+    if (cards.length > 1000 - deck.cards.length) {
+      notify('카드 셋에 남은 공간을 확인해 주세요.')
+      return false
+    }
+    updateDeck(deck.id, (d) => ({
+      ...d,
+      cards: [...d.cards, ...cards.map((card) => ({ ...card, id: uid() }))],
+    }))
+    setView('library')
+    notify(`${cards.length}장의 카드를 저장했어요.`)
+    return true
   }
   const deleteCard = (card) => {
     const targetId = deck.id,
@@ -344,6 +358,7 @@ function App() {
           onDeck={selectDeck}
           onStudy={study}
           onAdd={() => openEditor()}
+          onBulk={() => setView('bulk')}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
           onCreateDeck={() => setModal({ type: 'create' })}
@@ -368,6 +383,14 @@ function App() {
             setView('library')
           }}
           autosaved={autosaved}
+        />
+      )}
+      {view === 'bulk' && (
+        <BulkEditor
+          key={deck.id}
+          deck={deck}
+          onSave={saveBulk}
+          onExit={() => setView('library')}
         />
       )}
       <input
