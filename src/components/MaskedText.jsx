@@ -1,28 +1,45 @@
 import React from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { X, Check } from 'lucide-react'
 import { prepareMarkdown, remarkMasks } from '../lib/markdown'
+import { maskKey } from '../lib/masks'
 
-export default function MaskedText({ body, align = 'center', revealed, onToggle }) {
+export default function MaskedText({
+  body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong,
+}) {
   const { source, masks } = prepareMarkdown(body)
   const maskButton = (part, ordinal) => {
-    const visible = revealed.has(part.id)
+    const focused = !focusIds || focusIds.has(part.id)
+    const visible = !focused || revealed.has(part.id)
+    const key = maskKey(part)
+    const wrong = wrongIds?.has(key)
     return (
-      <button
-        key={part.id}
-        type="button"
-        className={`mask ${visible ? 'revealed' : ''}`}
-        aria-pressed={visible}
-        aria-label={
-          visible
-            ? `${part.text}, 다시 가리기`
-            : `${ordinal}번째 빈칸 정답 보기`
-        }
-        onClick={() => onToggle(part.id)}
-      >
-        <span className="mask-answer" aria-hidden="true">{part.text}</span>
-        {!visible && <span className="mask-question" aria-hidden="true">?</span>}
-      </button>
+      <span key={part.id} className="mask-wrap">
+        <button
+          type="button"
+          className={`mask ${visible ? 'revealed' : ''} ${wrong ? 'mask-wrong' : ''}`}
+          aria-pressed={visible}
+          aria-label={visible ? `${part.text}, 다시 가리기` : `${ordinal}번째 빈칸 정답 보기`}
+          onClick={() => focused && onToggle(part.id)}
+          disabled={!focused}
+        >
+          <span className="mask-answer" aria-hidden="true">{part.text}</span>
+          {!visible && <span className="mask-question" aria-hidden="true">?</span>}
+        </button>
+        {visible && onMarkWrong && focused && (
+          <button
+            type="button"
+            className={`mask-mark ${wrong ? 'marked' : ''}`}
+            aria-label={`${ordinal}번째 빈칸 ${wrong ? '틀림 해제' : '틀림 표시'}`}
+            aria-pressed={!!wrong}
+            title={wrong ? '틀림 해제' : '틀림 표시'}
+            onClick={() => onMarkWrong(key, !wrong)}
+          >
+            {wrong ? <Check size={14} /> : <X size={14} />}
+          </button>
+        )}
+      </span>
     )
   }
   return (

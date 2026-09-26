@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   parseBody,
   masksIn,
+  maskKey,
+  wrongMaskIds,
   maskSelection,
   bodyError,
   plainText,
@@ -45,6 +47,13 @@ test('multiline and repeated answers are separate masks without losing text', ()
   assert.equal(masksIn(body).length, 3)
   assert.equal(new Set(masksIn(body).map((p) => p.id)).size, 3)
   assert.equal(plainText(body), '앞 답\n답 뒤 여러\n줄')
+})
+test('wrong-answer review targets only matching masks after card edits', () => {
+  const original = '[[첫째]] 다음 [[둘째]]'
+  const saved = [maskKey(masksIn(original)[1])]
+  assert.deepEqual(wrongMaskIds(original, saved), [masksIn(original)[1].id])
+  assert.deepEqual(wrongMaskIds('[[새 답]] 다음 [[둘째]]', saved), [])
+  assert.deepEqual(wrongMaskIds('[[첫째]] 다음 [[수정]]', saved), [])
 })
 test('card sets round-trip exact Korean text, whitespace, and masks without internal state', () => {
   const cards = [

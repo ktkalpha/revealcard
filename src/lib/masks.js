@@ -18,6 +18,11 @@ export function parseBody(body) {
 }
 export const masksIn = (body) =>
   parseBody(body).filter((part) => part.id !== undefined)
+export const maskKey = (mask) => `${mask.id}:${mask.text}`
+export const wrongMaskIds = (body, savedKeys) => {
+  const saved = new Set(savedKeys || [])
+  return masksIn(body).filter((mask) => saved.has(maskKey(mask))).map((mask) => mask.id)
+}
 export const plainText = (body) =>
   parseBody(body)
     .map((part) => part.text)

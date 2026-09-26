@@ -17,12 +17,14 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
-import { masksIn } from '../lib/masks'
+import { masksIn, wrongMaskIds } from '../lib/masks'
 
 export default function Study({
   deck,
   decks,
   ratings,
+  wrongMasks,
+  onMarkWrong,
   position,
   onDeck,
   onRate,
@@ -43,16 +45,29 @@ export default function Study({
   const [revealed, setRevealed] = useState(new Set())
   const [results, setResults] = useState({})
   const [complete, setComplete] = useState(false)
-  const [reviewOnly, setReviewOnly] = useState(false)
+  const [reviewMode, setReviewMode] = useState('all')
+  const [focusByCard, setFocusByCard] = useState({})
   const [drag, setDrag] = useState(0)
   const pointer = useRef(null)
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
-  const maskIds = masksIn(card?.body || '').map((m) => m.id)
+  const cardMasks = masksIn(card?.body || '')
+  const focusIds = reviewMode === 'masks'
+    ? new Set(focusByCard[card?.id] || [])
+    : null
+  const maskIds = cardMasks
+    .filter((mask) => !focusIds || focusIds.has(mask.id))
+    .map((mask) => mask.id)
   const allVisible = maskIds.every((id) => revealed.has(id))
   const reviewIds = deck.cards
     .filter((c) => ratings[c.id] === 'again')
     .map((c) => c.id)
+  const wrongFocus = Object.fromEntries(deck.cards.map((item) => [
+    item.id, wrongMaskIds(item.body, wrongMasks[item.id]),
+  ]))
+  const wrongReviewIds = deck.cards
+    .filter((item) => wrongFocus[item.id].length)
+    .map((item) => item.id)
   const doneCount = Object.keys(results).length
   const againIds = queue.filter((id) => results[id] === 'again')
   const unmarkedIds = queue.filter((id) => !results[id])
@@ -87,13 +102,14 @@ export default function Study({
     onRate(card.id, value)
     move(1)
   }
-  const start = (ids, only = false) => {
+  const start = (ids, mode = 'all') => {
     setQueue(ids)
     setCursor(0)
     setRevealed(new Set())
     setResults({})
     setComplete(false)
-    setReviewOnly(only)
+    setReviewMode(mode)
+    setFocusByCard(mode === 'masks' ? wrongFocus : {})
   }
   const shuffle = () => {
     const ids = [...queue]
@@ -101,7 +117,7 @@ export default function Study({
       const j = Math.floor(Math.random() * (i + 1))
       ;[ids[i], ids[j]] = [ids[j], ids[i]]
     }
-    start(ids, reviewOnly)
+    start(ids, reviewMode)
   }
   useEffect(() => {
     const keydown = (e) => {
@@ -222,16 +238,22 @@ export default function Study({
           <div className="session-bar">
             <div className="segmented" aria-label="학습 범위">
               <button
-                aria-pressed={!reviewOnly}
+                aria-pressed={reviewMode === 'all'}
                 onClick={() => start(deck.cards.map((c) => c.id))}
               >
                 전체 <span>{deck.cards.length}</span>
               </button>
               <button
-                aria-pressed={reviewOnly}
-                onClick={() => start(reviewIds, true)}
+                aria-pressed={reviewMode === 'cards'}
+                onClick={() => start(reviewIds, 'cards')}
               >
                 다시 볼 카드 <span>{reviewIds.length}</span>
+              </button>
+              <button
+                aria-pressed={reviewMode === 'masks'}
+                onClick={() => start(wrongReviewIds, 'masks')}
+              >
+                틀린 가리개 <span>{wrongReviewIds.length}</span>
               </button>
             </div>
             <Button
@@ -248,8 +270,10 @@ export default function Study({
           {queue.length === 0 ? (
             <section className="empty-state paper">
               <CheckCheck size={34} />
-              <h2>다시 볼 카드가 없어요</h2>
-              <p>학습 중 헷갈리는 카드를 표시하면 여기에 모여요.</p>
+              <h2>{reviewMode === 'masks' ? '틀린 가리개가 없어요' : '다시 볼 카드가 없어요'}</h2>
+              <p>{reviewMode === 'masks'
+                ? '정답을 본 뒤 틀린 가리개를 표시하면 여기에 모여요.'
+                : '학습 중 헷갈리는 카드를 표시하면 여기에 모여요.'}</p>
               <Button onClick={() => start(deck.cards.map((c) => c.id))}>
                 전체 카드 학습
               </Button>
@@ -279,9 +303,16 @@ export default function Study({
                 </div>
               </div>
               <div className="completion-actions">
+                {wrongReviewIds.length > 0 && (
+                  <Button
+                    onClick={() => start(wrongReviewIds, 'masks')}
+                  >
+                    <RotateCcw size={16} /> 틀린 가리개 {wrongReviewIds.length}장 복습
+                  </Button>
+                )}
                 {againIds.length + unmarkedIds.length > 0 && (
                   <Button
-                    onClick={() => start([...againIds, ...unmarkedIds], true)}
+                    onClick={() => start([...againIds, ...unmarkedIds], 'cards')}
                   >
                     <RotateCcw size={16} /> 남은{' '}
                     {againIds.length + unmarkedIds.length}장 다시 학습
@@ -364,6 +395,9 @@ export default function Study({
                       align={card.align}
                       revealed={revealed}
                       onToggle={toggle}
+                      focusIds={focusIds}
+                      wrongIds={new Set(wrongMasks[card.id] || [])}
+                      onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
                     />
                   </div>
                   <div className="sheet-bottom" data-no-swipe>

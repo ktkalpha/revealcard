@@ -493,6 +493,12 @@ button svg {
 .study-text input[type='checkbox'] {
   vertical-align: middle;
 }
+.mask-wrap {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: 100%;
+}
 .mask {
   position: relative;
   display: inline-grid;
@@ -539,6 +545,30 @@ button svg {
 .mask:hover {
   border-color: #89917f;
   background: #e0e8dc;
+}
+.mask:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.mask-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  flex: none;
+  margin-left: 2px;
+  border: 1px solid #d2d2cb;
+  border-radius: 4px;
+  background: #fff;
+  color: #8c5046;
+}
+.mask-mark.marked {
+  background: #f9e4dd;
+  border-color: #cb8b7c;
+  color: #823c32;
+}
+.mask-wrong.revealed {
+  border-color: #cb8b7c;
 }
 .sheet-bottom {
   border-top: 1px solid #eceee5;
@@ -1706,6 +1736,19 @@ footer span:first-child {
   }
   .session-bar {
     margin-bottom: 15px;
+  }
+  .session-bar .segmented {
+    min-width: 0;
+    flex: 1;
+  }
+  .session-bar .segmented button {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    gap: 3px;
+    padding: 7px 4px;
+    white-space: normal;
+    text-align: center;
   }
   .segmented button {
     padding: 7px 10px;

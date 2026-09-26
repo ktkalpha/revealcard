@@ -22,7 +22,7 @@ import './style.css'
 
 function App() {
   const [library, setLibrary] = useState({
-    decks: [], selectedDeckId: null, ratings: {}, positions: {},
+    decks: [], selectedDeckId: null, ratings: {}, positions: {}, wrongMasks: {},
   })
   const [user, setUser] = useState(null)
   const [loaded, setLoaded] = useState(false)
@@ -88,9 +88,10 @@ function App() {
       const progress = JSON.parse(localStorage.getItem(key) || '{}')
       setLibrary((prev) => ({
         ...prev, ratings: progress.ratings || {}, positions: progress.positions || {},
+        wrongMasks: progress.wrongMasks || {},
       }))
     } catch {
-      setLibrary((prev) => ({ ...prev, ratings: {}, positions: {} }))
+      setLibrary((prev) => ({ ...prev, ratings: {}, positions: {}, wrongMasks: {} }))
     }
     setDraft(user ? loadDraft(localStorage, `${DRAFT_KEY}.${user.id}`) : null)
     setDraftOwner(user?.id || null)
@@ -100,12 +101,15 @@ function App() {
     try {
       localStorage.setItem(
         `revealcard.progress.v1.${user?.id || 'guest'}`,
-        JSON.stringify({ ratings: library.ratings, positions: library.positions }),
+        JSON.stringify({
+          ratings: library.ratings, positions: library.positions,
+          wrongMasks: library.wrongMasks,
+        }),
       )
     } catch {
       // Card sets remain safely stored on the server.
     }
-  }, [library.ratings, library.positions, user?.id, loaded])
+  }, [library.ratings, library.positions, library.wrongMasks, user?.id, loaded])
   useEffect(() => {
     if (!user || draftOwner !== user.id) return
     setAutosaved(false)
@@ -181,6 +185,16 @@ function App() {
       ...prev,
       ratings: { ...prev.ratings, [id]: value },
     }))
+  const markWrong = (cardId, key, wrong) =>
+    setLibrary((prev) => {
+      const next = new Set(prev.wrongMasks[cardId] || [])
+      if (wrong) next.add(key)
+      else next.delete(key)
+      const wrongMasks = { ...prev.wrongMasks }
+      if (next.size) wrongMasks[cardId] = [...next]
+      else delete wrongMasks[cardId]
+      return { ...prev, wrongMasks }
+    })
   const openEditor = (card) => {
     if (!requireOwner()) return
     if (!card && deck.cards.length >= 1000) {
@@ -444,6 +458,8 @@ function App() {
           deck={deck}
           decks={library.decks}
           ratings={library.ratings}
+          wrongMasks={library.wrongMasks}
+          onMarkWrong={markWrong}
           position={library.positions[deck.id]}
           onDeck={selectDeck}
           onRate={rate}
