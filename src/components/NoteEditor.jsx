@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, GripVertical, Highlighter, ListPlus, Maximize2, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, GripVertical, Highlighter, ListPlus, Maximize2, Minus, Plus, RotateCcw, Table2, Trash2 } from 'lucide-react'
 import { Button } from './ui/button'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
 import { moveBranch, moveDepth, parseOutline, serializeOutline, subtreeEnd } from '../lib/outline'
@@ -8,6 +8,7 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
   const { card } = draft
   const [rows, setRows] = useState(() => parseOutline(card.body))
   const [selected, setSelected] = useState(() => parseOutline(card.body)[0].id)
+  const [activeCell, setActiveCell] = useState(null)
   const [zoom, setZoom] = useState(null)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(null)
@@ -15,11 +16,12 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
   const inputRefs = useRef({})
   const selection = useRef(null)
   const dragRef = useRef(null)
+  const tableRefs = useRef({})
   const nextId = useRef(Math.max(...rows.map((row) => row.id)) + 1)
   const body = serializeOutline(rows)
   const syntaxError = bodyError(body)
   const canSave = !!card.title.trim() && !!body.trim() &&
-    rows.every((row) => row.text.trim()) && body.length <= 20000 && !syntaxError
+    rows.every((row) => row.type === 'table' || row.text.trim()) && body.length <= 20000 && !syntaxError
   const indexOf = (id) => rows.findIndex((row) => row.id === id)
   const ancestors = (index) => {
     const result = []
@@ -42,18 +44,80 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
     setError('')
   }
   const focus = (id, start) => requestAnimationFrame(() => {
-    const input = inputRefs.current[id]
+    const input = inputRefs.current[id] || tableRefs.current[`${id}:0:0`]
     input?.focus()
     if (start !== undefined) input?.setSelectionRange(start, start)
   })
+  const focusTable = (id, row, column, start) => requestAnimationFrame(() => {
+    const input = tableRefs.current[`${id}:${row}:${column}`]
+    input?.focus()
+    if (start !== undefined) input?.setSelectionRange(start, start)
+    if (input) selection.current = {
+      id, row, column, start: input.selectionStart, end: input.selectionEnd,
+    }
+  })
+  const tablePosition = (id) => activeCell?.id === id
+    ? activeCell : { row: 1, column: 0 }
+  const updateTable = (id, cells, target) => {
+    const index = indexOf(id)
+    const next = [...rows]
+    next[index] = { ...next[index], cells }
+    commit(next)
+    if (target) focusTable(id, target.row, target.column)
+  }
+  const insertTable = () => {
+    const index = indexOf(selected)
+    const parent = rows[index]
+    const next = [...rows]
+    const fresh = {
+      id: nextId.current++, depth: parent?.depth || 0,
+      type: 'table', cells: [['', ''], ['', '']], collapsed: false,
+    }
+    if (parent && parent.type !== 'table' && !parent.text.trim()) {
+      fresh.id = parent.id
+      next[index] = fresh
+    } else if (parent) {
+      fresh.depth = parent.type === 'table' ? parent.depth : Math.min(parent.depth + 1, 12)
+      next.splice(parent.type === 'table' ? subtreeEnd(rows, index) : index + 1, 0, fresh)
+      next[index] = { ...parent, collapsed: false }
+    } else next.push(fresh)
+    commit(next)
+    setSelected(fresh.id)
+    focusTable(fresh.id, 0, 0)
+  }
+  const addTableRow = (id, row, column = 0) => {
+    const cells = rows[indexOf(id)].cells.map((line) => [...line])
+    if (cells.length >= 100) return
+    cells.splice(row + 1, 0, Array(cells[0].length).fill(''))
+    updateTable(id, cells, { row: row + 1, column })
+  }
+  const addTableColumn = (id, column) => {
+    const cells = rows[indexOf(id)].cells.map((line) => [...line])
+    if (cells[0].length >= 12) return
+    cells.forEach((line) => line.splice(column + 1, 0, ''))
+    updateTable(id, cells, { row: tablePosition(id).row, column: column + 1 })
+  }
+  const removeTableRow = (id, row) => {
+    const cells = rows[indexOf(id)].cells.map((line) => [...line])
+    if (row === 0 || cells.length <= 2) return
+    cells.splice(row, 1)
+    updateTable(id, cells, { row: Math.max(1, row - 1), column: tablePosition(id).column })
+  }
+  const removeTableColumn = (id, column) => {
+    const cells = rows[indexOf(id)].cells.map((line) => [...line])
+    if (cells[0].length <= 2) return
+    cells.forEach((line) => line.splice(column, 1))
+    updateTable(id, cells, { row: tablePosition(id).row, column: Math.max(0, column - 1) })
+  }
   const add = (id) => {
     const index = indexOf(id)
-    if (!rows[index].text.trim()) {
+    if (rows[index].type !== 'table' && !rows[index].text.trim()) {
       focus(id)
       return
     }
     const after = subtreeEnd(rows, index)
-    if (rows[after] && rows[after].depth === rows[index].depth && !rows[after].text.trim()) {
+    if (rows[after] && rows[after].depth === rows[index].depth &&
+      rows[after].type !== 'table' && !rows[after].text.trim()) {
       setSelected(rows[after].id)
       focus(rows[after].id)
       return
@@ -123,16 +187,41 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
     setSelected(current.id)
   }
   const mask = () => {
+    const index = indexOf(selected)
+    if (rows[index]?.type === 'table') {
+      const position = tablePosition(selected)
+      const input = tableRefs.current[`${selected}:${position.row}:${position.column}`]
+      const saved = selection.current?.id === selected &&
+        selection.current.row === position.row && selection.current.column === position.column
+        ? selection.current : { start: input?.selectionStart, end: input?.selectionEnd }
+      if (!input || saved.start === saved.end || saved.start === undefined) {
+        setError('먼저 표 셀에서 가릴 글자를 선택해 주세요.')
+        return
+      }
+      try {
+        const cells = rows[index].cells.map((line) => [...line])
+        const result = maskSelection(cells[position.row][position.column], saved.start, saved.end)
+        cells[position.row][position.column] = result.body
+        updateTable(selected, cells)
+        selection.current = null
+        requestAnimationFrame(() => {
+          input.focus()
+          input.setSelectionRange(result.start, result.end)
+        })
+      } catch (cause) {
+        setError(cause.message)
+      }
+      return
+    }
     const input = inputRefs.current[selected]
     const saved = selection.current
-    const start = saved?.id === selected ? saved.start : input?.selectionStart
-    const end = saved?.id === selected ? saved.end : input?.selectionEnd
+    const start = saved?.id === selected && saved.row === undefined ? saved.start : input?.selectionStart
+    const end = saved?.id === selected && saved.row === undefined ? saved.end : input?.selectionEnd
     if (!input || start === undefined || end === undefined || start === end) {
       setError('먼저 항목에서 가릴 글자를 선택해 주세요.')
       return
     }
     try {
-      const index = indexOf(selected)
       const result = maskSelection(rows[index].text, start, end)
       const next = [...rows]
       next[index] = { ...next[index], text: result.body }
@@ -190,6 +279,23 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
       remove(id)
     }
   }
+  const handleTableKey = (event, id, row, column) => {
+    const cells = rows[indexOf(id)].cells
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault()
+      if (event.shiftKey) focusTable(id, Math.max(0, row - 1), column)
+      else if (row < cells.length - 1) focusTable(id, row + 1, column)
+      else if (!event.repeat) addTableRow(id, row, column)
+    } else if (event.key === 'Tab') {
+      if (event.shiftKey && row === 0 && column === 0) return
+      event.preventDefault()
+      if (event.shiftKey) {
+        focusTable(id, column ? row : row - 1, column ? column - 1 : cells[0].length - 1)
+      } else if (column < cells[0].length - 1) focusTable(id, row, column + 1)
+      else if (row < cells.length - 1) focusTable(id, row + 1, 0)
+      else addTableRow(id, row, 0)
+    }
+  }
   const save = (event) => {
     event.preventDefault()
     if (canSave) onSave()
@@ -225,6 +331,9 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
           <Button type="button" variant="ghost" size="sm" onClick={() => add(selected)}>
             <ListPlus size={16} /> 항목 추가
           </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={insertTable}>
+            <Table2 size={16} /> 표 추가
+          </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => indent(selected, 1)}>
             들여쓰기
           </Button>
@@ -242,7 +351,8 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
         </div>
         {zoom !== null && (
           <button type="button" className="note-breadcrumb" onClick={() => setZoom(null)}>
-            전체 노트 / {rows[indexOf(zoom)]?.text.replace(/\[\[|\]\]/g, '')}
+            전체 노트 / {rows[indexOf(zoom)]?.type === 'table'
+              ? '표' : rows[indexOf(zoom)]?.text.replace(/\[\[|\]\]/g, '')}
           </button>
         )}
         <div className="outline-rows">
@@ -250,12 +360,48 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
             if (!visible(row, index)) return null
             const hasChildren = subtreeEnd(rows, index) > index + 1
             const depth = row.depth - (zoom === null ? 0 : rows[indexOf(zoom)].depth)
+            const table = row.type === 'table'
+            const position = table ? tablePosition(row.id) : null
+            const cellInput = (value, rowIndex, columnIndex) => (
+              <input
+                ref={(element) => { tableRefs.current[`${row.id}:${rowIndex}:${columnIndex}`] = element }}
+                aria-label={`표 ${rowIndex === 0 ? '머리글' : `${rowIndex}행`} ${columnIndex + 1}열`}
+                value={value}
+                maxLength={20000}
+                placeholder={rowIndex === 0 ? `열 ${columnIndex + 1}` : '내용'}
+                onFocus={(event) => {
+                  setSelected(row.id)
+                  setActiveCell({ id: row.id, row: rowIndex, column: columnIndex })
+                  selection.current = {
+                    id: row.id, row: rowIndex, column: columnIndex,
+                    start: event.currentTarget.selectionStart,
+                    end: event.currentTarget.selectionEnd,
+                  }
+                }}
+                onSelect={(event) => {
+                  selection.current = {
+                    id: row.id, row: rowIndex, column: columnIndex,
+                    start: event.currentTarget.selectionStart,
+                    end: event.currentTarget.selectionEnd,
+                  }
+                }}
+                onChange={(event) => {
+                  const cells = row.cells.map((line) => [...line])
+                  cells[rowIndex][columnIndex] = event.target.value
+                  updateTable(row.id, cells)
+                }}
+                onKeyDown={(event) => handleTableKey(event, row.id, rowIndex, columnIndex)}
+              />
+            )
             return (
               <div
-                className={`outline-row ${selected === row.id ? 'selected' : ''} ${dragging === row.id ? 'moving' : ''} ${markerId === row.id ? `drop-${drop.side}` : ''}`}
+                className={`outline-row ${table ? 'outline-table-row' : ''} ${selected === row.id ? 'selected' : ''} ${dragging === row.id ? 'moving' : ''} ${markerId === row.id ? `drop-${drop.side}` : ''}`}
                 key={row.id}
                 data-outline-id={row.id}
-                style={{ '--depth': depth }}
+                style={{
+                  '--depth': depth,
+                  '--table-min-width': table ? `${Math.max(420, row.cells[0].length * 128)}px` : undefined,
+                }}
               >
                 {row.id !== zoom && (
                   <button
@@ -277,14 +423,44 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
                 )}
                 <button
                   type="button" className="outline-bullet"
-                  aria-label={`${row.text || '빈 항목'} ${hasChildren ? row.collapsed ? '펼치기' : '접기' : '선택'}`}
+                  aria-label={`${table ? '표' : row.text || '빈 항목'} ${hasChildren ? row.collapsed ? '펼치기' : '접기' : '선택'}`}
                   onClick={() => {
                     setSelected(row.id)
                     if (hasChildren) commit(rows.map((item) => item.id === row.id ? { ...item, collapsed: !item.collapsed } : item))
                     else focus(row.id)
                   }}
-                >{hasChildren && row.collapsed ? <ChevronRight size={17} /> : <span aria-hidden="true">•</span>}</button>
-                <input
+                >{hasChildren && row.collapsed ? <ChevronRight size={17} />
+                  : table ? <Table2 size={16} /> : <span aria-hidden="true">•</span>}</button>
+                {table ? <div className="outline-table-block">
+                  <div className="outline-table-scroll">
+                    <table>
+                      <thead><tr>{row.cells[0].map((cell, column) => (
+                        <th key={column}>{cellInput(cell, 0, column)}</th>
+                      ))}</tr></thead>
+                      <tbody>{row.cells.slice(1).map((line, dataIndex) => (
+                        <tr key={dataIndex}>{line.map((cell, column) => (
+                          <td key={column}>{cellInput(cell, dataIndex + 1, column)}</td>
+                        ))}</tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  <div className="outline-table-tools" role="toolbar" aria-label="표 편집">
+                    <span>행</span>
+                    <Button type="button" variant="ghost" size="icon" title="선택한 셀 다음에 행 추가" aria-label="행 추가"
+                      disabled={row.cells.length >= 100} onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => addTableRow(row.id, position.row, position.column)}><Plus size={14} /></Button>
+                    <Button type="button" variant="ghost" size="icon" title="선택한 행 삭제" aria-label="행 삭제"
+                      disabled={position.row === 0 || row.cells.length <= 2} onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => removeTableRow(row.id, position.row)}><Minus size={14} /></Button>
+                    <span>열</span>
+                    <Button type="button" variant="ghost" size="icon" title="선택한 셀 다음에 열 추가" aria-label="열 추가"
+                      disabled={row.cells[0].length >= 12} onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => addTableColumn(row.id, position.column)}><Plus size={14} /></Button>
+                    <Button type="button" variant="ghost" size="icon" title="선택한 열 삭제" aria-label="열 삭제"
+                      disabled={row.cells[0].length <= 2} onPointerDown={(event) => event.preventDefault()}
+                      onClick={() => removeTableColumn(row.id, position.column)}><Minus size={14} /></Button>
+                  </div>
+                </div> : <input
                   ref={(element) => { inputRefs.current[row.id] = element }}
                   aria-label={`${index + 1}번 항목`}
                   value={row.text}
@@ -304,9 +480,10 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
                   }}
                   onKeyDown={(event) => handleKey(event, row.id)}
                   onPaste={(event) => handlePaste(event, row.id)}
-                />
+                />}
                 <span className="outline-row-actions">
-                  {row.text.includes('[[') && <span className="outline-mask-badge">가리개</span>}
+                  {(table ? row.cells.some((line) => line.some((cell) => cell.includes('[[')))
+                    : row.text.includes('[[')) && <span className="outline-mask-badge">가리개</span>}
                   <Button type="button" variant="ghost" size="icon" title="이 가지에 집중" aria-label={`${index + 1}번 가지에 집중`} onClick={() => setZoom(row.id)}><Maximize2 size={15} /></Button>
                   <Button type="button" variant="ghost" size="icon" title="하위 항목 추가" aria-label={`${index + 1}번 하위 항목 추가`} onClick={() => {
                     const fresh = { id: nextId.current++, depth: row.depth + 1, text: '', collapsed: false }

@@ -56,3 +56,25 @@ test('study rows retain global mask ids for reveal and wrong-answer review', () 
   assert.deepEqual(rows.flatMap((row) => row.maskParts.map((mask) => mask.id)),
     masksIn(body).map((mask) => mask.id))
 })
+
+test('Markdown tables round-trip as movable outline rows with stable mask ids', () => {
+  const body = '- 분류\n  - | 종류 | 설명 |\n    | --- | --- |\n    | [[체언]] | 이름\\|뜻 |\n- 끝'
+  const rows = parseOutline(body)
+  assert.deepEqual(rows.map((row) => row.depth), [0, 1, 0])
+  assert.equal(rows[1].type, 'table')
+  assert.deepEqual(rows[1].cells, [['종류', '설명'], ['[[체언]]', '이름|뜻']])
+  assert.equal(serializeOutline(rows), body)
+  assert.deepEqual(studyOutline(body)[1].maskParts.map((mask) => mask.id),
+    masksIn(body).map((mask) => mask.id))
+  const moved = moveBranch(rows, rows[1].id, rows[2].id, 'after')
+  assert.deepEqual(parseOutline(serializeOutline(moved)).map((row) => row.type),
+    [undefined, undefined, 'table'])
+})
+
+test('table masks can contain pipes without changing the answer', () => {
+  const body = '- | 질문 | 정답 |\n  | --- | --- |\n  | 단어 | [[가|나]] |'
+  const rows = parseOutline(body)
+  assert.equal(rows[0].cells[1][1], '[[가|나]]')
+  assert.equal(serializeOutline(rows), body)
+  assert.equal(studyOutline(body)[0].maskParts[0].text, '가|나')
+})

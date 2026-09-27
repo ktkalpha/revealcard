@@ -285,7 +285,7 @@ button svg {
   min-width: 0;
 }
 .study-page.note-study-page {
-  width: min(100% - 64px, 1360px);
+  width: min(100% - 40px, 1600px);
 }
 .study-toolbar {
   display: flex;
@@ -465,6 +465,26 @@ button svg {
 .note-study-row .study-text h3 {
   margin: 0;
   line-height: inherit;
+}
+.note-study-row.table-row .study-text {
+  overflow-x: auto;
+}
+.note-study-row.table-row .study-text table {
+  display: table;
+  width: 100%;
+  min-width: var(--table-min-width);
+  table-layout: fixed;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.note-study-row.table-row .study-text th,
+.note-study-row.table-row .study-text td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.note-study-row.table-row .study-text th {
+  background: #edf2ed;
 }
 .note-study-row .mask {
   min-width: 36px;
@@ -1275,7 +1295,7 @@ kbd {
   padding-top: 22px;
 }
 .note-page {
-  width: min(100% - 48px, 1080px);
+  width: min(100% - 40px, 1600px);
   margin: 0 auto;
   padding: 22px 0 60px;
   flex: 1;
@@ -1285,7 +1305,7 @@ kbd {
   margin-bottom: 25px;
 }
 .note-editor {
-  max-width: 850px;
+  width: 100%;
 }
 .note-editor > label {
   display: block;
@@ -1413,6 +1433,73 @@ kbd {
   width: 28px;
   min-width: 28px;
   height: 28px;
+}
+.outline-table-row {
+  align-items: flex-start;
+}
+.outline-table-row .outline-drag,
+.outline-table-row .outline-bullet {
+  margin-top: 6px;
+}
+.outline-table-block {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0 8px 3px;
+}
+.outline-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.outline-table-block table {
+  width: 100%;
+  min-width: var(--table-min-width);
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.outline-table-block th,
+.outline-table-block td {
+  min-width: 120px;
+  padding: 0;
+  border: 1px solid #d3dcd3;
+  text-align: left;
+}
+.outline-table-block th {
+  background: #edf2ed;
+}
+.outline-table-block td {
+  background: #fff;
+}
+.outline-table-block input:not([type='radio']):not([type='checkbox']) {
+  display: block;
+  width: 100%;
+  height: 38px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.outline-table-block input:focus {
+  outline: 2px solid #36826a;
+  outline-offset: -2px;
+}
+.outline-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 5px;
+}
+.outline-table-tools span {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 8px;
+}
+.outline-table-tools .button {
+  width: 27px;
+  min-width: 27px;
+  height: 27px;
+  min-height: 27px;
+  padding: 0;
 }
 .outline-mask-badge {
   color: #876b35;

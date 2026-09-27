@@ -1,26 +1,91 @@
-import { masksIn } from './masks.js'
+import { masksIn, parseBody } from './masks.js'
+
+function tableCells(line) {
+  const source = line.trim()
+  if (!source.startsWith('|') || !source.endsWith('|')) return null
+  const cells = []
+  let cell = ''
+  let insideMask = false
+  for (let index = 1; index < source.length - 1; index++) {
+    const char = source[index]
+    const pair = source.slice(index, index + 2)
+    if (pair === '[[' || (insideMask && pair === ']]')) {
+      insideMask = pair === '[['
+      cell += pair
+      index++
+    } else if (!insideMask && char === '\\' && ['\\', '|'].includes(source[index + 1])) {
+      cell += source[++index]
+    } else if (!insideMask && char === '|') {
+      cells.push(cell.trim())
+      cell = ''
+    } else cell += char
+  }
+  cells.push(cell.trim())
+  return cells
+}
+
+export function tableMarkdown(cells) {
+  const columns = Math.max(2, cells[0]?.length || 0)
+  const escapeCell = (value) => parseBody(String(value || '')).map((part) =>
+    part.id === undefined
+      ? part.text.replaceAll('\\', '\\\\').replaceAll('|', '\\|')
+      : `[[${part.text}]]`,
+  ).join('')
+  const line = (values) => `| ${Array.from({ length: columns }, (_, index) =>
+    escapeCell(values[index]),
+  ).join(' | ')} |`
+  return [line(cells[0] || []), line(Array(columns).fill('---')),
+    ...cells.slice(1).map(line)].join('\n')
+}
 
 export function parseOutline(body) {
   if (!body) return [{ id: 1, depth: 0, text: '', collapsed: false }]
+  const lines = body.split('\n')
+  const rows = []
   let previousDepth = 0
-  return body.split('\n').map((line, index) => {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
     const match = /^( *)(?:-\s)(.*)$/.exec(line)
     const requestedDepth = match ? Math.floor(match[1].length / 2) : 0
-    const depth = index ? Math.min(requestedDepth, previousDepth + 1) : 0
+    const depth = rows.length ? Math.min(requestedDepth, previousDepth + 1) : 0
     previousDepth = depth
-    return {
-      id: index + 1,
+    const header = match && tableCells(match[2])
+    const prefix = match && `${match[1]}  `
+    const separator = prefix && lines[index + 1]?.startsWith(prefix)
+      ? tableCells(lines[index + 1].slice(prefix.length)) : null
+    if (header && separator?.length === header.length &&
+      separator.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+      const cells = [header]
+      index++
+      while (lines[index + 1]?.startsWith(prefix)) {
+        const next = tableCells(lines[index + 1].slice(prefix.length))
+        if (!next) break
+        cells.push(Array.from({ length: header.length }, (_, column) => next[column] || ''))
+        index++
+      }
+      if (cells.length === 1) cells.push(header.map(() => ''))
+      rows.push({ id: rows.length + 1, depth, type: 'table', cells, collapsed: false })
+      continue
+    }
+    rows.push({
+      id: rows.length + 1,
       depth,
       text: match ? match[2] : line,
       collapsed: false,
-    }
-  })
+    })
+  }
+  return rows
 }
 
 export function serializeOutline(rows) {
-  return rows.filter((row) => row.text.trim()).map(
-    (row) => `${'  '.repeat(row.depth)}- ${row.text}`,
-  ).join('\n')
+  return rows.flatMap((row) => {
+    const prefix = '  '.repeat(row.depth)
+    if (row.type === 'table') {
+      const [header, ...rest] = tableMarkdown(row.cells).split('\n')
+      return [`${prefix}- ${header}`, ...rest.map((line) => `${prefix}  ${line}`)]
+    }
+    return row.text.trim() ? [`${prefix}- ${row.text}`] : []
+  }).join('\n')
 }
 
 export function subtreeEnd(rows, index) {
@@ -62,8 +127,9 @@ export function studyOutline(body) {
   const masks = masksIn(body)
   let ordinal = 0
   return parseOutline(body).map((row) => {
-    const count = masksIn(row.text).length
-    const result = { ...row, maskParts: masks.slice(ordinal, ordinal + count), maskOrdinalStart: ordinal }
+    const text = row.type === 'table' ? tableMarkdown(row.cells) : row.text
+    const count = masksIn(text).length
+    const result = { ...row, text, maskParts: masks.slice(ordinal, ordinal + count), maskOrdinalStart: ordinal }
     ordinal += count
     return result
   })
