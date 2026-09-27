@@ -41,7 +41,7 @@ export function ExportDialog({ deck, onClose, onNotice }) {
   }
   const shareAvailable = !!navigator.canShare?.({ files: [makeFile()] })
   return (
-    <Modal title="카드 셋 내보내기" onClose={onClose}>
+    <Modal title="카드 셋 다운로드" onClose={onClose}>
       <p className="modal-description">
         저장한 파일을 보내면 누구나 같은 빈칸과 순서로 학습할 수 있어요.
       </p>

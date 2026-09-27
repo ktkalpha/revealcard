@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
+import NoteStudy from './NoteStudy'
 import { masksIn, wrongMaskIds } from '../lib/masks'
 
 export default function Study({
@@ -351,16 +352,16 @@ export default function Study({
                   />
                 </div>
                 <article
-                  className={`card-sheet paper ${drag ? 'dragging' : ''}`}
+                  className={card.kind === 'note' ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
                   style={{
-                    transform: drag
+                    transform: card.kind !== 'note' && drag
                       ? `translateX(${drag}px) rotate(${drag / 35}deg)`
                       : undefined,
                   }}
-                  onPointerDown={pointerDown}
-                  onPointerMove={pointerMove}
-                  onPointerUp={pointerEnd}
-                  onPointerCancel={() => {
+                  onPointerDown={card.kind === 'note' ? undefined : pointerDown}
+                  onPointerMove={card.kind === 'note' ? undefined : pointerMove}
+                  onPointerUp={card.kind === 'note' ? undefined : pointerEnd}
+                  onPointerCancel={card.kind === 'note' ? undefined : () => {
                     pointer.current = null
                     setDrag(0)
                   }}
@@ -374,7 +375,7 @@ export default function Study({
                 >
                   <div className="sheet-top">
                     <span className="overline">
-                      CARD {String(cursor + 1).padStart(2, '0')}
+                      {card.kind === 'note' ? 'NOTE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
                     </span>
                     {onEdit && (
                       <Button
@@ -388,17 +389,28 @@ export default function Study({
                       </Button>
                     )}
                   </div>
-                  <div className="sheet-content" key={card.id}>
-                    <h1 style={{ textAlign: card.align || 'center' }}>{card.title}</h1>
-                    <MaskedText
-                      body={card.body}
-                      align={card.align}
-                      revealed={revealed}
-                      onToggle={toggle}
-                      focusIds={focusIds}
-                      wrongIds={new Set(wrongMasks[card.id] || [])}
-                      onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
-                    />
+                  <div className={card.kind === 'note' ? 'note-study-content' : 'sheet-content'} key={card.id}>
+                    <h1 style={card.kind === 'note' ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
+                    {card.kind === 'note' ? (
+                      <NoteStudy
+                        body={card.body}
+                        revealed={revealed}
+                        onToggle={toggle}
+                        focusIds={focusIds}
+                        wrongIds={new Set(wrongMasks[card.id] || [])}
+                        onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
+                      />
+                    ) : (
+                      <MaskedText
+                        body={card.body}
+                        align={card.align}
+                        revealed={revealed}
+                        onToggle={toggle}
+                        focusIds={focusIds}
+                        wrongIds={new Set(wrongMasks[card.id] || [])}
+                        onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
+                      />
+                    )}
                   </div>
                   <div className="sheet-bottom" data-no-swipe>
                     <span aria-live="polite">
@@ -460,7 +472,7 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    <span className="swipe-tip">좌우로 밀어 카드 이동</span>
+                    {card.kind !== 'note' && <span className="swipe-tip">좌우로 밀어 카드 이동</span>}
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />

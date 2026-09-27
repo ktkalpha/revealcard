@@ -11,6 +11,7 @@ import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
 import { api } from './lib/api'
+import { offlineDecks, rememberedUser, rememberUser, removeOfflineDeck, saveOfflineDeck } from './lib/offline'
 import {
   DRAFT_KEY,
   STORAGE_KEY,
@@ -31,6 +32,8 @@ function App() {
   const [draftOwner, setDraftOwner] = useState(null)
   const [autosaved, setAutosaved] = useState(false)
   const [serverError, setServerError] = useState('')
+  const [offline, setOffline] = useState(false)
+  const [offlineIds, setOfflineIds] = useState([])
   const [modal, setModal] = useState(null)
   const [notice, setNotice] = useState(null)
   const [sessionVersion, setSessionVersion] = useState(0)
@@ -53,8 +56,43 @@ function App() {
 
   const refresh = useCallback(async (preferredId) => {
     const version = ++requestVersion.current
-    const next = await api('/api/bootstrap')
+    let next
+    try {
+      next = await api('/api/bootstrap')
+    } catch (error) {
+      if (version !== requestVersion.current) return
+      const cachedUser = rememberedUser()
+      try {
+        const cached = await offlineDecks(cachedUser?.id)
+        if (version !== requestVersion.current) return
+        setUser(cachedUser)
+        setOfflineIds(cached.savedIds)
+        setLibrary((prev) => ({
+          ...prev,
+          decks: cached.decks,
+          selectedDeckId: [preferredId, prev.selectedDeckId].find((id) =>
+            cached.decks.some((item) => item.id === id),
+          ) || cached.decks[0]?.id || null,
+        }))
+        setServerError(cached.decks.length
+          ? '오프라인 모드 · 기기에 저장한 카드 셋으로 학습할 수 있어요.'
+          : '서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
+      } catch {
+        setServerError('서버와 기기 저장소에 연결할 수 없어요.')
+      }
+      setOffline(true)
+      setLoaded(true)
+      throw error
+    }
     if (version !== requestVersion.current) return
+    rememberUser(next.user)
+    try {
+      const cached = await offlineDecks(next.user?.id)
+      if (version !== requestVersion.current) return
+      setOfflineIds(cached.savedIds)
+    } catch {
+      setOfflineIds([])
+    }
     setUser(next.user)
     setLibrary((prev) => ({
       ...prev,
@@ -65,17 +103,15 @@ function App() {
         ) || next.decks[0]?.id || null,
     }))
     setServerError('')
+    setOffline(false)
     setLoaded(true)
   }, [])
   useEffect(() => {
-    refresh().catch(() => {
-      setServerError('서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
-      setLoaded(true)
-    })
+    refresh().catch(() => {})
     const timer = setInterval(() => {
-      if (!busy.current) refresh().catch(() => setServerError('서버 연결을 확인해 주세요.'))
+      if (!busy.current) refresh().catch(() => {})
     }, 15000)
-    const onFocus = () => refresh().catch(() => setServerError('서버 연결을 확인해 주세요.'))
+    const onFocus = () => refresh().catch(() => {})
     window.addEventListener('focus', onFocus)
     return () => {
       clearInterval(timer)
@@ -156,12 +192,41 @@ function App() {
     }
   }
   const requireOwner = () => {
-    if (!user) setModal({ type: 'auth' })
+    if (offline) notify('오프라인에서는 학습만 할 수 있어요. 연결 후 다시 시도해 주세요.')
+    else if (!user) setModal({ type: 'auth' })
     else if (!deck.canEdit) {
       if (!library.decks.some((item) => item.canEdit)) setModal({ type: 'create' })
       else notify('내 카드 셋을 선택하거나 새 셋을 만들어 주세요.')
     }
-    return !!user && !!deck.canEdit
+    return !offline && !!user && !!deck.canEdit
+  }
+  const downloadForOffline = async () => {
+    try {
+      await saveOfflineDeck(deck, user?.id)
+      setOfflineIds((ids) => [...new Set([...ids, deck.id])])
+      notify('카드 셋을 이 기기에 저장했어요.')
+    } catch {
+      notify('기기 저장 공간을 확인해 주세요. 카드 셋을 저장하지 못했어요.')
+    }
+  }
+  const removeFromOffline = async () => {
+    try {
+      await removeOfflineDeck(deck.id)
+      setOfflineIds((ids) => ids.filter((id) => id !== deck.id))
+      if (offline) {
+        const cached = await offlineDecks(user?.id)
+        setLibrary((prev) => ({
+          ...prev,
+          decks: cached.decks,
+          selectedDeckId: cached.decks[0]?.id || null,
+        }))
+        if (!cached.decks.length)
+          setServerError('서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
+      }
+      notify('기기에 저장한 카드 셋을 삭제했어요.')
+    } catch {
+      notify('기기 저장 내용을 삭제하지 못했어요.')
+    }
   }
   const selectDeck = (id) =>
     setLibrary((prev) => ({ ...prev, selectedDeckId: id }))
@@ -386,6 +451,7 @@ function App() {
             size="sm"
             aria-label="새 카드 만들기"
             onClick={() => openEditor()}
+            disabled={offline}
           >
             <Plus size={16} />
             <span>새 카드</span>
@@ -395,7 +461,22 @@ function App() {
             size="sm"
             aria-label={user ? `${user.username} 로그아웃` : '로그인'}
             onClick={async () => {
-              if (!user) setModal({ type: 'auth' })
+              if (offline && user) {
+                rememberUser(null)
+                setUser(null)
+                const cached = await offlineDecks(null).catch(() => ({ decks: [], savedIds: [] }))
+                setOfflineIds(cached.savedIds)
+                setLibrary((prev) => ({
+                  ...prev, decks: cached.decks, selectedDeckId: cached.decks[0]?.id || null,
+                }))
+                if (!cached.decks.length)
+                  setServerError('서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
+                setDraft(null)
+                setView('library')
+              } else if (!user) {
+                if (offline) notify('로그인하려면 서버에 연결해 주세요.')
+                else setModal({ type: 'auth' })
+              }
               else if (await run(() => api('/api/logout', { method: 'POST' }))) {
                 setView('library')
                 setDraft(null)
@@ -454,7 +535,7 @@ function App() {
           onEdit={deck.canEdit ? openEditor : null}
           onLibrary={() => setView('library')}
           onAdd={() => openEditor()}
-          onImport={() => user ? fileInput.current.click() : setModal({ type: 'auth' })}
+          onImport={() => offline ? notify('불러오기는 다시 연결한 뒤 가능해요.') : user ? fileInput.current.click() : setModal({ type: 'auth' })}
           modalOpen={!!modal}
         />
       )}
@@ -475,8 +556,12 @@ function App() {
           onDeleteDeck={() => deck.canEdit && setModal({ type: 'delete-deck' })}
           onVisibility={setVisibility}
           onMigrate={() => setModal({ type: 'migrate' })}
-          showMigration={!!user && !user.migrated && hasLegacy}
+          showMigration={!offline && !!user && !user.migrated && hasLegacy}
           onExport={() => setModal({ type: 'export' })}
+          offline={offline}
+          offlineSaved={offlineIds.includes(deck.id)}
+          onOfflineSave={downloadForOffline}
+          onOfflineRemove={removeFromOffline}
           onImport={() => user ? fileInput.current.click() : setModal({ type: 'auth' })}
         />
       )}

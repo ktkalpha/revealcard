@@ -1,8 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: {
+        name: 'Revealcard',
+        short_name: 'Revealcard',
+        description: '가리고, 기억하고, 확인하는 카드 학습',
+        theme_color: '#f8f7f4',
+        background_color: '#f8f7f4',
+        display: 'standalone',
+        icons: [
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+        ],
+      },
+      workbox: {
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+      },
+    }),
+  ],
   server: {
     proxy: {
       '/api': {

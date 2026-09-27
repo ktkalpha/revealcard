@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Highlighter, ListPlus, Maximize2, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, GripVertical, Highlighter, ListPlus, Maximize2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from './ui/button'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
-import { moveDepth, parseOutline, serializeOutline, subtreeEnd } from '../lib/outline'
+import { moveBranch, moveDepth, parseOutline, serializeOutline, subtreeEnd } from '../lib/outline'
 
 export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, autosaved }) {
   const { card } = draft
@@ -10,8 +10,11 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
   const [selected, setSelected] = useState(() => parseOutline(card.body)[0].id)
   const [zoom, setZoom] = useState(null)
   const [error, setError] = useState('')
+  const [dragging, setDragging] = useState(null)
+  const [drop, setDrop] = useState(null)
   const inputRefs = useRef({})
   const selection = useRef(null)
+  const dragRef = useRef(null)
   const nextId = useRef(Math.max(...rows.map((row) => row.id)) + 1)
   const body = serializeOutline(rows)
   const syntaxError = bodyError(body)
@@ -67,6 +70,57 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
     if (next === rows) return
     commit(next)
     focus(id)
+  }
+  const moveSibling = (id, direction) => {
+    const index = indexOf(id)
+    const depth = rows[index].depth
+    let target = direction > 0 ? subtreeEnd(rows, index) : index - 1
+    if (direction < 0) {
+      while (target >= 0 && rows[target].depth > depth) target--
+    }
+    if (!rows[target] || rows[target].depth !== depth) return
+    commit(moveBranch(rows, id, rows[target].id, direction > 0 ? 'after' : 'before'))
+    setSelected(id)
+  }
+  const dragStart = (event, id) => {
+    if (!event.isPrimary || event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragRef.current = { id, pointerId: event.pointerId, startY: event.clientY, active: false, drop: null }
+    setSelected(id)
+  }
+  const dragMove = (event) => {
+    const current = dragRef.current
+    if (!current || current.pointerId !== event.pointerId) return
+    if (!current.active && Math.abs(event.clientY - current.startY) < 5) return
+    if (!current.active) {
+      current.active = true
+      setDragging(current.id)
+    }
+    const element = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-outline-id]')
+    const targetId = Number(element?.dataset.outlineId)
+    const source = indexOf(current.id)
+    const target = indexOf(targetId)
+    const invalid = !element || target < 0 || (target >= source && target < subtreeEnd(rows, source)) ||
+      targetId === zoom
+    const side = element && event.clientY < element.getBoundingClientRect().top +
+      element.getBoundingClientRect().height / 2 ? 'before' : 'after'
+    const candidate = invalid ? null : { targetId, side }
+    current.drop = candidate
+    setDrop(candidate)
+    if (event.clientY < 55) window.scrollBy(0, -18)
+    else if (event.clientY > window.innerHeight - 55) window.scrollBy(0, 18)
+  }
+  const dragEnd = (event, cancelled = false) => {
+    const current = dragRef.current
+    if (!current || current.pointerId !== event.pointerId) return
+    dragRef.current = null
+    setDragging(null)
+    setDrop(null)
+    if (cancelled || !current.active || !current.drop) return
+    const next = moveBranch(rows, current.id, current.drop.targetId, current.drop.side)
+    if (next !== rows) commit(next)
+    setSelected(current.id)
   }
   const mask = () => {
     const input = inputRefs.current[selected]
@@ -141,6 +195,11 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
     if (canSave) onSave()
     else setError(syntaxError || '제목과 모든 항목의 내용을 입력해 주세요.')
   }
+  const dropIndex = drop && indexOf(drop.targetId)
+  const markerId = drop && (drop.side === 'before'
+    ? drop.targetId
+    : rows.slice(dropIndex, subtreeEnd(rows, dropIndex))
+      .filter((row) => visible(row, indexOf(row.id))).at(-1)?.id)
 
   return (
     <main id="main" className="note-page">
@@ -192,7 +251,30 @@ export default function NoteEditor({ draft, deckName, onChange, onSave, onExit, 
             const hasChildren = subtreeEnd(rows, index) > index + 1
             const depth = row.depth - (zoom === null ? 0 : rows[indexOf(zoom)].depth)
             return (
-              <div className={`outline-row ${selected === row.id ? 'selected' : ''}`} key={row.id} style={{ '--depth': depth }}>
+              <div
+                className={`outline-row ${selected === row.id ? 'selected' : ''} ${dragging === row.id ? 'moving' : ''} ${markerId === row.id ? `drop-${drop.side}` : ''}`}
+                key={row.id}
+                data-outline-id={row.id}
+                style={{ '--depth': depth }}
+              >
+                {row.id !== zoom && (
+                  <button
+                    type="button"
+                    className="outline-drag"
+                    aria-label={`${index + 1}번 항목 순서 변경`}
+                    title="드래그해서 순서 변경 · 위아래 화살표로 이동"
+                    onPointerDown={(event) => dragStart(event, row.id)}
+                    onPointerMove={dragMove}
+                    onPointerUp={dragEnd}
+                    onPointerCancel={(event) => dragEnd(event, true)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        moveSibling(row.id, event.key === 'ArrowUp' ? -1 : 1)
+                      }
+                    }}
+                  ><GripVertical size={15} /></button>
+                )}
                 <button
                   type="button" className="outline-bullet"
                   aria-label={`${row.text || '빈 항목'} ${hasChildren ? row.collapsed ? '펼치기' : '접기' : '선택'}`}

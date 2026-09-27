@@ -39,6 +39,10 @@ export default function Library({
   showMigration,
   onExport,
   onImport,
+  offline,
+  offlineSaved,
+  onOfflineSave,
+  onOfflineRemove,
 }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -80,13 +84,13 @@ export default function Library({
           </p>
         </div>
         <div className="library-actions">
-          <Button variant="outline" onClick={onImport}>
+          <Button variant="outline" onClick={onImport} disabled={offline}>
             <FileUp size={17} /> 불러오기
           </Button>
-          <Button variant="outline" onClick={onAdd} disabled={!!user && !deck.canEdit && decks.some((item) => item.canEdit)}>
+          <Button variant="outline" onClick={onAdd} disabled={offline || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
             <Plus size={17} /> 한 장 만들기
           </Button>
-          <Button onClick={onNote} disabled={deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
+          <Button onClick={onNote} disabled={offline || deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
             <BookOpen size={17} /> 노트 추가
           </Button>
         </div>
@@ -102,6 +106,7 @@ export default function Library({
               size="icon"
               aria-label="새 카드 셋 만들기"
               onClick={onCreateDeck}
+              disabled={offline}
             >
               <Plus size={17} />
             </Button>
@@ -133,9 +138,9 @@ export default function Library({
             <ChevronDown size={15} />
           </div>
           <p className="storage-note">
-            카드 셋은 이 서버에 저장돼요.
+            {offline ? '기기에 저장한 카드 셋을 보고 있어요.' : '카드 셋은 이 서버에 저장돼요.'}
             <br />
-            비공개 셋은 로그인한 소유자만 볼 수 있어요.
+            {offline ? '편집은 다시 연결한 뒤 가능해요.' : '기기에 저장한 셋은 오프라인에서도 학습할 수 있어요.'}
           </p>
           {showMigration && (
             <Button className="migration-button" variant="outline" size="sm" onClick={onMigrate}>
@@ -199,11 +204,32 @@ export default function Library({
             <Button
               variant="outline"
               size="sm"
+              onClick={onOfflineSave}
+              disabled={offline || !deck.cards.length}
+              title={offlineSaved ? '기기에 저장된 카드 셋 업데이트' : '오프라인 학습용으로 기기에 저장'}
+            >
+              {offlineSaved ? <RotateCcw size={15} /> : <Download size={15} />}
+              <span>{offlineSaved ? '저장본 업데이트' : '오프라인 저장'}</span>
+            </Button>
+            {offlineSaved && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onOfflineRemove}
+                title="기기 저장본 삭제"
+                aria-label="기기 저장본 삭제"
+              >
+                <Trash2 size={15} />
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
               onClick={onExport}
               disabled={!deck.cards.length}
             >
               <Download size={15} />
-              <span>내보내기</span>
+              <span>파일 다운로드</span>
             </Button>
           </div>
           <div className="collection-filters">
@@ -246,7 +272,7 @@ export default function Library({
                 </Button>
               ) : (
                 filter === 'all' && (
-                  (deck.canEdit || !decks.length) && (
+                  !offline && (deck.canEdit || !decks.length) && (
                     <Button onClick={onNote}>
                       <BookOpen size={16} /> {user ? '노트 추가' : '로그인'}
                     </Button>

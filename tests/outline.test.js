@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { moveDepth, parseOutline, serializeOutline, subtreeEnd } from '../src/lib/outline.js'
+import { moveBranch, moveDepth, parseOutline, serializeOutline, studyOutline, subtreeEnd } from '../src/lib/outline.js'
 import { exportCardSet, parseCardSet } from '../src/cardSet.js'
 import { masksIn } from '../src/lib/masks.js'
 
@@ -26,4 +26,33 @@ test('indent and outdent move an entire branch without changing its content', ()
 
 test('oversized indentation is normalized on import', () => {
   assert.deepEqual(parseOutline('- 첫째\n        - 둘째').map((row) => row.depth), [0, 1])
+})
+
+test('dragging a branch moves its children together before or after another branch', () => {
+  const rows = parseOutline('- 첫째\n  - [[하위]]\n- 둘째\n  - 둘째 하위\n- 셋째')
+  const after = moveBranch(rows, 1, 3, 'after')
+  assert.deepEqual(after.map((row) => row.text), ['둘째', '둘째 하위', '첫째', '[[하위]]', '셋째'])
+  assert.deepEqual(after.map((row) => row.depth), [0, 1, 0, 1, 0])
+  assert.equal(masksIn(serializeOutline(after)).length, 1)
+  assert.deepEqual(moveBranch(after, 1, 3, 'before').map((row) => row.text), rows.map((row) => row.text))
+  assert.deepEqual(rows.map((row) => row.text), ['첫째', '[[하위]]', '둘째', '둘째 하위', '셋째'])
+})
+
+test('cross-depth drops preserve relative nesting and reject dropping inside itself', () => {
+  const rows = parseOutline('- 첫째\n  - 하위\n- 둘째\n  - 대상\n    - 자식')
+  const moved = moveBranch(rows, 1, 4, 'after')
+  assert.deepEqual(moved.map((row) => row.text), ['둘째', '대상', '자식', '첫째', '하위'])
+  assert.deepEqual(moved.map((row) => row.depth), [0, 1, 2, 1, 2])
+  assert.equal(moveBranch(rows, 1, 2, 'before'), rows)
+  assert.equal(moveBranch(rows, 1, 1, 'after'), rows)
+  assert.equal(moveBranch(rows, 1, 99, 'before'), rows)
+})
+
+test('study rows retain global mask ids for reveal and wrong-answer review', () => {
+  const body = '- [[첫째]]\n  - **[[둘째]]**\n- [[셋째]]'
+  const rows = studyOutline(body)
+  assert.deepEqual(rows.map((row) => row.depth), [0, 1, 0])
+  assert.deepEqual(rows.map((row) => row.maskOrdinalStart), [0, 1, 2])
+  assert.deepEqual(rows.flatMap((row) => row.maskParts.map((mask) => mask.id)),
+    masksIn(body).map((mask) => mask.id))
 })

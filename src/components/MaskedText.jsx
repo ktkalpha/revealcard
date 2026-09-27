@@ -7,8 +7,11 @@ import { maskKey } from '../lib/masks'
 
 export default function MaskedText({
   body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong,
+  maskParts, maskOrdinalStart = 0,
 }) {
-  const { source, masks } = prepareMarkdown(body)
+  const prepared = prepareMarkdown(body)
+  const { source } = prepared
+  const masks = maskParts || prepared.masks
   const maskButton = (part, ordinal) => {
     const focused = !focusIds || focusIds.has(part.id)
     const visible = !focused || revealed.has(part.id)
@@ -52,7 +55,7 @@ export default function MaskedText({
             if (!match || !masks[Number(match[1])])
               return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
             const part = masks[Number(match[1])]
-            return maskButton(part, Number(match[1]) + 1)
+            return maskButton(part, Number(match[1]) + maskOrdinalStart + 1)
           },
           code({ children, ...props }) {
             const pieces = String(children).split(/(\uE000rc\d+\uE001)/g)
@@ -62,7 +65,7 @@ export default function MaskedText({
                   const match = /^\uE000rc(\d+)\uE001$/.exec(piece)
                   const part = match && masks[Number(match[1])]
                   return part
-                    ? maskButton(part, Number(match[1]) + 1)
+                    ? maskButton(part, Number(match[1]) + maskOrdinalStart + 1)
                     : <React.Fragment key={index}>{piece}</React.Fragment>
                 })}
               </code>
