@@ -200,7 +200,10 @@ export default function Study({
   }
 
   return (
-    <main id="main" className="study-page">
+    <main
+      id="main"
+      className={`study-page${card?.kind === 'note' ? ' note-study-page' : ''}`}
+    >
       <div className="study-toolbar">
         <div className="deck-select">
           <BookOpen size={17} />

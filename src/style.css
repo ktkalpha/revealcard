@@ -284,6 +284,9 @@ button svg {
   flex: 1;
   min-width: 0;
 }
+.study-page.note-study-page {
+  width: min(100% - 64px, 1360px);
+}
 .study-toolbar {
   display: flex;
   align-items: center;
@@ -469,6 +472,15 @@ button svg {
   padding: 2px 8px;
   margin: 0 2px;
   font-size: 0.95em;
+}
+.note-study-row .mask-question {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4e6055;
+  font-size: 18px;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 .note-study .sheet-bottom {
   border-top-color: #dfe5dd;
@@ -1971,6 +1983,9 @@ footer span:first-child {
     width: calc(100% - 32px);
     padding-top: 15px;
     padding-bottom: 24px;
+  }
+  .study-page.note-study-page {
+    width: calc(100% - 32px);
   }
   .study-toolbar {
     margin-bottom: 12px;
