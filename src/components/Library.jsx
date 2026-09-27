@@ -28,7 +28,7 @@ export default function Library({
   onDeck,
   onStudy,
   onAdd,
-  onBulk,
+  onNote,
   onEdit,
   onDelete,
   onCreateDeck,
@@ -86,8 +86,8 @@ export default function Library({
           <Button variant="outline" onClick={onAdd} disabled={!!user && !deck.canEdit && decks.some((item) => item.canEdit)}>
             <Plus size={17} /> 한 장 만들기
           </Button>
-          <Button onClick={onBulk} disabled={deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
-            <Plus size={17} /> 여러 장 만들기
+          <Button onClick={onNote} disabled={deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
+            <BookOpen size={17} /> 노트 추가
           </Button>
         </div>
       </div>
@@ -247,8 +247,8 @@ export default function Library({
               ) : (
                 filter === 'all' && (
                   (deck.canEdit || !decks.length) && (
-                    <Button onClick={onBulk}>
-                      <Plus size={16} /> {user ? '카드 여러 장 만들기' : '로그인'}
+                    <Button onClick={onNote}>
+                      <BookOpen size={16} /> {user ? '노트 추가' : '로그인'}
                     </Button>
                   )
                 )
@@ -271,6 +271,7 @@ export default function Library({
                         {markdownExcerpt(card.body)}
                       </span>
                       <span className="card-meta">
+                        {card.kind === 'note' && <span className="note-kind"><BookOpen size={12} /> 노트</span>}
                         빈칸 {masksIn(card.body).length}개
                         {ratings[card.id] && (
                           <span className={`status-label ${ratings[card.id]}`}>

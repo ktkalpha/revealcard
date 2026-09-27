@@ -115,3 +115,36 @@ test('browser migration is private and can only run once per account', async () 
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('note kind is stored, editable only by its owner, and rejects unknown kinds', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'revealcard-note-'))
+  const server = await createApp({ dataFile: join(dir, 'cards.json'), distDir: dir })
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const base = `http://127.0.0.1:${server.address().port}`
+    const request = async (path, method = 'GET', body, cookie = '') => {
+      const response = await fetch(base + path, {
+        method,
+        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] }
+    }
+    const owner = await request('/api/register', 'POST', { username: 'noteowner', password: 'correct-horse-123' })
+    const deck = await request('/api/decks', 'POST', { name: '노트', visibility: 'public' }, owner.cookie)
+    const path = `/api/decks/${deck.data.id}/cards`
+    const note = { title: '역사', body: '- 서간도\n  - [[경학사]]', kind: 'note' }
+    assert.equal((await request(path, 'POST', { cards: [note] }, owner.cookie)).status, 200)
+    const publicView = (await request('/api/bootstrap')).data.decks[0].cards[0]
+    assert.equal(publicView.kind, 'note')
+    assert.equal(publicView.body, note.body)
+    assert.equal((await request(`${path}/${publicView.id}`, 'PUT', { ...note, title: '침입' })).status, 401)
+    assert.equal((await request(`${path}/${publicView.id}`, 'PUT', { ...note, title: '수정' }, owner.cookie)).status, 200)
+    assert.equal((await request('/api/bootstrap', 'GET', null, owner.cookie)).data.decks[0].cards[0].kind, 'note')
+    assert.equal((await request(path, 'POST', { cards: [{ ...note, kind: 'unknown' }] }, owner.cookie)).status, 400)
+  } finally {
+    if (server.listening) await new Promise((resolve) => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})

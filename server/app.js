@@ -48,6 +48,7 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
+    (card.kind !== undefined && card.kind !== 'note') ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
     bodyError(card.body)
@@ -57,6 +58,7 @@ const cardInput = (card) => {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
+    ...(card.kind === 'note' ? { kind: 'note' } : {}),
     ...(card.align ? { align: card.align } : {}),
   }
 }

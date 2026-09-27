@@ -5,7 +5,7 @@ import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
-import BulkEditor from './components/BulkEditor'
+import NoteEditor from './components/NoteEditor'
 import AuthDialog from './components/AuthDialog'
 import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
@@ -195,7 +195,7 @@ function App() {
       else delete wrongMasks[cardId]
       return { ...prev, wrongMasks }
     })
-  const openEditor = (card) => {
+  const openDraft = (card, kind) => {
     if (!requireOwner()) return
     if (!card && deck.cards.length >= 1000) {
       notify(
@@ -206,7 +206,7 @@ function App() {
     const next = {
       deckId: deck.id,
       isNew: !card,
-      card: card ? { ...card } : { id: uid(), title: '', body: '' },
+      card: card ? { ...card } : { id: uid(), title: '', body: '', ...(kind === 'note' ? { kind } : {}) },
     }
     if (
       draft &&
@@ -217,8 +217,10 @@ function App() {
       return
     }
     setDraft(draft && card && draft.card.id === card.id ? draft : next)
-    setView('edit')
+    setView((card?.kind || kind) === 'note' ? 'note' : 'edit')
   }
+  const openEditor = (card) => openDraft(card, 'card')
+  const openNote = () => openDraft(null, 'note')
   const saveDraft = async () => {
     const target = library.decks.find((d) => d.id === draft.deckId)
     if (!target?.canEdit) {
@@ -244,22 +246,7 @@ function App() {
     if (!result) return
     setDraft(null)
     setView('library')
-    notify('카드를 저장했어요.')
-  }
-  const saveBulk = async (cards) => {
-    if (!requireOwner()) return false
-    if (cards.length > 1000 - deck.cards.length) {
-      notify('카드 셋에 남은 공간을 확인해 주세요.')
-      return false
-    }
-    const result = await run(
-      () => api(`/api/decks/${deck.id}/cards`, { method: 'POST', body: { cards } }),
-      deck.id,
-    )
-    if (!result) return false
-    setView('library')
-    notify(`${cards.length}장의 카드를 저장했어요.`)
-    return true
+    notify(saved.kind === 'note' ? '노트를 저장했어요.' : '카드를 저장했어요.')
   }
   const deleteCard = async (card) => {
     const targetId = deck.id,
@@ -347,7 +334,7 @@ function App() {
       method: 'POST',
       body: {
         decks: legacy.data.decks.map(({ name, cards }) => ({
-          name, cards: cards.map(({ title, body, align }) => ({ title, body, align })),
+          name, cards: cards.map(({ title, body, align, kind }) => ({ title, body, align, kind })),
         })),
       },
     }))
@@ -428,9 +415,9 @@ function App() {
           </Button>
         </div>
       )}
-      {draft && user && view !== 'edit' && (
+      {draft && user && view !== 'edit' && view !== 'note' && (
         <div className="draft-banner">
-          <span>작성 중인 카드가 있어요.</span>
+          <span>작성 중인 {draft.card.kind === 'note' ? '노트' : '카드'}가 있어요.</span>
           <button
             onClick={() => {
               selectDeck(
@@ -438,7 +425,7 @@ function App() {
                   ? draft.deckId
                   : deck.id,
               )
-              setView('edit')
+              setView(draft.card.kind === 'note' ? 'note' : 'edit')
             }}
           >
             이어서 작성 <ArrowIcon />
@@ -480,7 +467,7 @@ function App() {
           onDeck={selectDeck}
           onStudy={study}
           onAdd={() => openEditor()}
-          onBulk={() => requireOwner() && setView('bulk')}
+          onNote={openNote}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
           onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
@@ -510,12 +497,19 @@ function App() {
           autosaved={autosaved}
         />
       )}
-      {view === 'bulk' && (
-        <BulkEditor
-          key={deck.id}
-          deck={deck}
-          onSave={saveBulk}
-          onExit={() => setView('library')}
+      {view === 'note' && draft && (
+        <NoteEditor
+          key={draft.card.id}
+          draft={draft}
+          deckName={library.decks.find((d) => d.id === draft.deckId)?.name || deck.name}
+          onChange={(card) => setDraft((prev) => ({ ...prev, card }))}
+          onSave={saveDraft}
+          onExit={() => {
+            if (!draft.card.title.trim() && !draft.card.body.trim())
+              setDraft(null)
+            setView('library')
+          }}
+          autosaved={autosaved}
         />
       )}
       <input
@@ -605,9 +599,9 @@ function App() {
         </Modal>
       )}
       {modal?.type === 'draft' && (
-        <Modal title="작성 중인 카드가 있어요" onClose={() => setModal(null)}>
+        <Modal title={`작성 중인 ${draft.card.kind === 'note' ? '노트' : '카드'}가 있어요`} onClose={() => setModal(null)}>
           <p className="modal-description">
-            ‘{draft.card.title || '제목 없는 카드'}’를 이어서 작성할 수 있어요.
+            ‘{draft.card.title || '제목 없음'}’을 이어서 작성할 수 있어요.
           </p>
           <div className="dialog-actions">
             <Button
@@ -615,7 +609,7 @@ function App() {
               onClick={() => {
                 setDraft(modal.next)
                 setModal(null)
-                setView('edit')
+                setView(modal.next.card.kind === 'note' ? 'note' : 'edit')
               }}
             >
               버리고 새로 작성
@@ -623,7 +617,7 @@ function App() {
             <Button
               onClick={() => {
                 setModal(null)
-                setView('edit')
+                setView(draft.card.kind === 'note' ? 'note' : 'edit')
               }}
             >
               이어서 작성
