@@ -118,10 +118,21 @@ export async function createApp({
   openAiKey = process.env.OPENAI_API_KEY,
   openAiModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
   aiFetch = fetch,
+  aiTimeoutMs = 15000,
+  aiRateLimit = 20,
+  aiRateWindowMs = 10 * 60 * 1000,
 }) {
   const store = await createStore(dataFile)
   const sessions = new Map()
   const attempts = new Map()
+  const aiAttempts = new Map()
+  const rateLimited = (map, key, limit, windowMs) => {
+    const recent = (map.get(key) || []).filter((time) => time > Date.now() - windowMs)
+    if (recent.length >= limit) return true
+    recent.push(Date.now())
+    map.set(key, recent)
+    return false
+  }
   const cookie = (token, maxAge) =>
     `rc_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
 
@@ -168,7 +179,8 @@ export async function createApp({
         if (!card || card.answerMode !== 'written') fail(404, '서술형 카드를 찾을 수 없어요.')
         const expected = masksIn(card.body).map((mask) => mask.text)
         if (!Array.isArray(body.answers) || body.answers.length !== expected.length ||
-          body.answers.some((answer) => typeof answer !== 'string' || answer.length > 2000))
+          body.answers.some((answer) =>
+            typeof answer !== 'string' || !answer.trim() || answer.length > 2000))
           fail(400, '답안을 확인해 주세요.')
         const exact = expected.map((answer, index) =>
           normalized(answer) === normalized(body.answers[index]),
@@ -177,20 +189,29 @@ export async function createApp({
           send(res, 200, { results: exact.map(() => ({ score: 1, correct: true, feedback: '정확해요.' })) })
           return
         }
+        if (!user) fail(401, '로그인 후 AI 채점을 이용할 수 있어요.')
         if (!openAiKey) fail(503, 'AI 채점이 설정되지 않았어요. 서버에 OPENAI_API_KEY를 설정해 주세요.')
-        const response = await aiFetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: openAiModel,
-            temperature: 0,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: '당신은 한국어 학습 답안 채점기입니다. 표현이 달라도 핵심 의미가 같으면 정답으로 판정하세요. 제공된 정답 자체의 명백한 오류는 무시하지 말고, 각 항목에 score(0~1), correct(boolean, score>=0.75), feedback(한 문장)를 담은 results JSON만 반환하세요.' },
-              { role: 'user', content: JSON.stringify({ context: card.title, expected, submitted: body.answers }) },
-            ],
-          }),
-        })
+        if (rateLimited(aiAttempts, req.socket.remoteAddress, aiRateLimit, aiRateWindowMs))
+          fail(429, 'AI 채점을 너무 많이 요청했어요. 잠시 후 다시 시도해 주세요.')
+        let response
+        try {
+          response = await aiFetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(aiTimeoutMs),
+            body: JSON.stringify({
+              model: openAiModel,
+              temperature: 0,
+              response_format: { type: 'json_object' },
+              messages: [
+                { role: 'system', content: '당신은 한국어 학습 답안 채점기입니다. 표현이 달라도 핵심 의미가 같으면 정답으로 판정하세요. 제공된 정답 자체의 명백한 오류는 무시하지 말고, 각 항목에 score(0~1), correct(boolean, score>=0.75), feedback(한 문장)를 담은 results JSON만 반환하세요.' },
+                { role: 'user', content: JSON.stringify({ context: card.title, expected, submitted: body.answers }) },
+              ],
+            }),
+          })
+        } catch {
+          fail(502, 'AI 채점 서비스에 연결하지 못했어요.')
+        }
         if (!response.ok) fail(502, 'AI 채점 서비스에 연결하지 못했어요.')
         let graded
         try {
@@ -215,11 +236,8 @@ export async function createApp({
       }
       if (path === '/api/register' || path === '/api/login') {
         if (req.method !== 'POST') fail(405, '허용되지 않은 요청이에요.')
-        const ip = req.socket.remoteAddress
-        const recent = (attempts.get(ip) || []).filter((time) => time > Date.now() - 60000)
-        if (recent.length >= 10) fail(429, '잠시 후 다시 시도해 주세요.')
-        recent.push(Date.now())
-        attempts.set(ip, recent)
+        if (rateLimited(attempts, req.socket.remoteAddress, 10, 60000))
+          fail(429, '잠시 후 다시 시도해 주세요.')
         const { username, password } = await jsonBody(req)
         if (
           typeof username !== 'string' ||

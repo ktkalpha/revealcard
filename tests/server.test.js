@@ -181,9 +181,67 @@ test('written answers are graded exactly or through the configured AI service', 
     const exact = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: [' 엽록체 '] })
     assert.equal(exact.data.results[0].score, 1)
     assert.equal(aiCalls, 0)
-    const similar = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] })
+    const similar = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] }, owner.cookie)
     assert.equal(similar.data.results[0].correct, true)
     assert.equal(aiCalls, 1)
+  } finally {
+    if (server.listening) await new Promise((resolve) => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('anonymous grading is limited to exact matches, blank answers are rejected before AI, and AI use is rate limited', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'revealcard-grade-limit-'))
+  let aiCalls = 0
+  const server = await createApp({
+    dataFile: join(dir, 'cards.json'), distDir: dir, openAiKey: 'test-key', aiRateLimit: 2,
+    aiFetch: async (url, options) => {
+      aiCalls++
+      assert.ok(options.signal instanceof AbortSignal, 'AI fetch should carry an abort/timeout signal')
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        results: [{ score: 0.9, correct: true, feedback: '의미가 같아요.' }],
+      }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const base = `http://127.0.0.1:${server.address().port}`
+    const request = async (path, body, cookie = '') => {
+      const response = await fetch(base + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] }
+    }
+    const owner = await request('/api/register', { username: 'grader2', password: 'correct-horse-123' })
+    const deck = await request('/api/decks', { name: '서술형', visibility: 'public', cards: [{
+      title: '세포 소기관', body: '광합성은 [[엽록체]]에서 일어난다.', answerMode: 'written',
+    }] }, owner.cookie)
+    const bootstrap = await (await fetch(base + '/api/bootstrap')).json()
+    const card = bootstrap.decks[0].cards[0]
+
+    const anonExact = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: [' 엽록체 '] })
+    assert.equal(anonExact.status, 200)
+    assert.equal(anonExact.data.results[0].score, 1)
+    assert.equal(aiCalls, 0)
+
+    const anonMismatch = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] })
+    assert.equal(anonMismatch.status, 401)
+    assert.equal(aiCalls, 0)
+
+    const blankLoggedIn = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['   '] }, owner.cookie)
+    assert.equal(blankLoggedIn.status, 400)
+    assert.equal(aiCalls, 0)
+
+    for (let i = 0; i < 2; i++) {
+      const graded = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] }, owner.cookie)
+      assert.equal(graded.status, 200)
+    }
+    assert.equal(aiCalls, 2)
+    const limited = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] }, owner.cookie)
+    assert.equal(limited.status, 429)
+    assert.equal(aiCalls, 2)
   } finally {
     if (server.listening) await new Promise((resolve) => server.close(resolve))
     await rm(dir, { recursive: true, force: true })
