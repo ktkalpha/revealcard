@@ -399,7 +399,7 @@ function App() {
       method: 'POST',
       body: {
         decks: legacy.data.decks.map(({ name, cards }) => ({
-          name, cards: cards.map(({ title, body, align, kind }) => ({ title, body, align, kind })),
+          name, cards: cards.map(({ title, body, align, kind, answerMode }) => ({ title, body, align, kind, answerMode })),
         })),
       },
     }))

@@ -3,6 +3,7 @@ import { Check, Download, FileJson, Share2 } from 'lucide-react'
 import { Button } from './ui/button'
 import Modal from './Modal'
 import { exportCardSet } from '../cardSet'
+import { blooketRows, exportBlooketCsv } from '../lib/blooket'
 import { importCards } from '../lib/storage'
 
 export function ExportDialog({ deck, onClose, onNotice }) {
@@ -25,6 +26,20 @@ export function ExportDialog({ deck, onClose, onNotice }) {
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     onNotice('카드 셋 파일을 내보냈어요.')
+    onClose()
+  }
+  const blooketCount = blooketRows(deck.cards).length
+  const downloadBlooket = () => {
+    const csvName = `${(name.trim() || 'revealcard').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').slice(0, 80)}.blooket.csv`
+    const url = URL.createObjectURL(new Blob([exportBlooketCsv(deck.cards)], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = csvName
+    document.body.append(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    onNotice(`Blooket 문제 ${blooketCount}개를 내보냈어요.`)
     onClose()
   }
   const share = async () => {
@@ -66,6 +81,15 @@ export function ExportDialog({ deck, onClose, onNotice }) {
         <br />
         개인 학습 기록은 파일에 포함되지 않아요.
       </p>
+      <div className="blooket-export">
+        <div>
+          <strong>Blooket으로 내보내기</strong>
+          <span>빈칸마다 객관식 문제로 바꿔 CSV로 저장해요.</span>
+        </div>
+        <Button variant="outline" onClick={downloadBlooket} disabled={!blooketCount}>
+          <Download size={16} /> Blooket CSV ({blooketCount})
+        </Button>
+      </div>
       <div className="dialog-actions">
         {shareAvailable && (
           <Button

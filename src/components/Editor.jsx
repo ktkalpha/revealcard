@@ -132,6 +132,19 @@ export default function Editor({
             <label htmlFor="card-body">내용</label>
             <span>{ids.length}개의 빈칸</span>
           </div>
+          <fieldset className="answer-mode">
+            <legend>학습 방식</legend>
+            <label>
+              <input type="radio" name="answer-mode" checked={card.answerMode !== 'written'}
+                onChange={() => { const { answerMode, ...next } = card; onChange(next) }} />
+              눌러서 정답 공개
+            </label>
+            <label>
+              <input type="radio" name="answer-mode" checked={card.answerMode === 'written'}
+                onChange={() => onChange({ ...card, answerMode: 'written' })} />
+              서술형 직접 입력 <small>AI 유사도 채점</small>
+            </label>
+          </fieldset>
           <div className="alignment-control">
             <span>텍스트 정렬</span>
             <div className="segmented" role="group" aria-label="텍스트 정렬">

@@ -148,3 +148,44 @@ test('note kind is stored, editable only by its owner, and rejects unknown kinds
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('written answers are graded exactly or through the configured AI service', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'revealcard-grade-'))
+  let aiCalls = 0
+  const server = await createApp({
+    dataFile: join(dir, 'cards.json'), distDir: dir, openAiKey: 'test-key',
+    aiFetch: async () => {
+      aiCalls++
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        results: [{ score: 0.9, correct: true, feedback: '의미가 같아요.' }],
+      }) } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const base = `http://127.0.0.1:${server.address().port}`
+    const request = async (path, body, cookie = '') => {
+      const response = await fetch(base + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] }
+    }
+    const owner = await request('/api/register', { username: 'grader', password: 'correct-horse-123' })
+    const deck = await request('/api/decks', { name: '서술형', visibility: 'public', cards: [{
+      title: '세포 소기관', body: '광합성은 [[엽록체]]에서 일어난다.', answerMode: 'written',
+    }] }, owner.cookie)
+    const bootstrap = await (await fetch(base + '/api/bootstrap')).json()
+    const card = bootstrap.decks[0].cards[0]
+    const exact = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: [' 엽록체 '] })
+    assert.equal(exact.data.results[0].score, 1)
+    assert.equal(aiCalls, 0)
+    const similar = await request('/api/grade', { deckId: deck.data.id, cardId: card.id, answers: ['클로로플라스트'] })
+    assert.equal(similar.data.results[0].correct, true)
+    assert.equal(aiCalls, 1)
+  } finally {
+    if (server.listening) await new Promise((resolve) => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})
