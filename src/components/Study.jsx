@@ -82,6 +82,7 @@ export default function Study({
     if (card) onPosition(card.id)
   }, [card?.id])
   const written = card?.answerMode === 'written' && cardMasks.length > 0
+  const blanksLocked = written && !writtenResults
   const submitWrittenResults = (graded) => {
     setWrittenResults(graded)
     setRevealed(new Set(maskIds))
@@ -409,7 +410,7 @@ export default function Study({
                       <NoteStudy
                         body={card.body}
                         revealed={revealed}
-                        onToggle={toggle}
+                        onToggle={blanksLocked ? undefined : toggle}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
                         onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
@@ -419,7 +420,7 @@ export default function Study({
                         body={card.body}
                         align={card.align}
                         revealed={revealed}
-                        onToggle={toggle}
+                        onToggle={blanksLocked ? undefined : toggle}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
                         onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
