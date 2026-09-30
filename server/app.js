@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { bodyError } from '../src/lib/masks.js'
+import { bodyError, masksIn } from '../src/lib/masks.js'
 import { createStore } from './store.js'
 
 const hashPassword = promisify(scrypt)
@@ -49,6 +49,7 @@ const cardInput = (card) => {
     !card.body.trim() ||
     card.body.length > 20000 ||
     (card.kind !== undefined && card.kind !== 'note') ||
+    (card.answerMode !== undefined && card.answerMode !== 'written') ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
     bodyError(card.body)
@@ -59,6 +60,7 @@ const cardInput = (card) => {
     title: card.title.trim(),
     body: card.body,
     ...(card.kind === 'note' ? { kind: 'note' } : {}),
+    ...(card.answerMode === 'written' ? { answerMode: 'written' } : {}),
     ...(card.align ? { align: card.align } : {}),
   }
 }
@@ -107,10 +109,30 @@ async function jsonBody(req) {
   }
 }
 
-export async function createApp({ dataFile, distDir, secureCookies = false }) {
+const normalized = (value) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+
+export async function createApp({
+  dataFile,
+  distDir,
+  secureCookies = false,
+  openAiKey = process.env.OPENAI_API_KEY,
+  openAiModel = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+  aiFetch = fetch,
+  aiTimeoutMs = 15000,
+  aiRateLimit = 20,
+  aiRateWindowMs = 10 * 60 * 1000,
+}) {
   const store = await createStore(dataFile)
   const sessions = new Map()
   const attempts = new Map()
+  const aiAttempts = new Map()
+  const rateLimited = (map, key, limit, windowMs) => {
+    const recent = (map.get(key) || []).filter((time) => time > Date.now() - windowMs)
+    if (recent.length >= limit) return true
+    recent.push(Date.now())
+    map.set(key, recent)
+    return false
+  }
   const cookie = (token, maxAge) =>
     `rc_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
 
@@ -150,13 +172,72 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         send(res, 200, { user: userView(user), decks: visibleDecks(store.read(), user) })
         return
       }
+      if (path === '/api/grade' && req.method === 'POST') {
+        const body = await jsonBody(req)
+        const deck = visibleDecks(store.read(), user).find((item) => item.id === body.deckId)
+        const card = deck?.cards.find((item) => item.id === body.cardId)
+        if (!card || card.answerMode !== 'written') fail(404, '서술형 카드를 찾을 수 없어요.')
+        const expected = masksIn(card.body).map((mask) => mask.text)
+        if (!Array.isArray(body.answers) || body.answers.length !== expected.length ||
+          body.answers.some((answer) =>
+            typeof answer !== 'string' || !answer.trim() || answer.length > 2000))
+          fail(400, '답안을 확인해 주세요.')
+        const exact = expected.map((answer, index) =>
+          normalized(answer) === normalized(body.answers[index]),
+        )
+        if (exact.every(Boolean)) {
+          send(res, 200, { results: exact.map(() => ({ score: 1, correct: true, feedback: '정확해요.' })) })
+          return
+        }
+        if (!user) fail(401, '로그인 후 AI 채점을 이용할 수 있어요.')
+        if (!openAiKey) fail(503, 'AI 채점이 설정되지 않았어요. 서버에 OPENAI_API_KEY를 설정해 주세요.')
+        if (rateLimited(aiAttempts, req.socket.remoteAddress, aiRateLimit, aiRateWindowMs))
+          fail(429, 'AI 채점을 너무 많이 요청했어요. 잠시 후 다시 시도해 주세요.')
+        let response
+        try {
+          response = await aiFetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(aiTimeoutMs),
+            body: JSON.stringify({
+              model: openAiModel,
+              temperature: 0,
+              response_format: { type: 'json_object' },
+              messages: [
+                { role: 'system', content: '당신은 한국어 학습 답안 채점기입니다. 표현이 달라도 핵심 의미가 같으면 정답으로 판정하세요. 제공된 정답 자체의 명백한 오류는 무시하지 말고, 각 항목에 score(0~1), correct(boolean, score>=0.75), feedback(한 문장)를 담은 results JSON만 반환하세요.' },
+                { role: 'user', content: JSON.stringify({ context: card.title, expected, submitted: body.answers }) },
+              ],
+            }),
+          })
+        } catch {
+          fail(502, 'AI 채점 서비스에 연결하지 못했어요.')
+        }
+        if (!response.ok) fail(502, 'AI 채점 서비스에 연결하지 못했어요.')
+        let graded
+        try {
+          const payload = await response.json()
+          graded = JSON.parse(payload.choices?.[0]?.message?.content || '{}').results
+        } catch {
+          fail(502, 'AI 채점 결과를 읽지 못했어요.')
+        }
+        if (!Array.isArray(graded) || graded.length !== expected.length)
+          fail(502, 'AI 채점 결과 형식이 올바르지 않아요.')
+        const results = graded.map((item, index) => {
+          if (exact[index]) return { score: 1, correct: true, feedback: '정확해요.' }
+          const score = Math.max(0, Math.min(1, Number(item?.score) || 0))
+          return {
+            score,
+            correct: score >= 0.75,
+            feedback: typeof item?.feedback === 'string' ? item.feedback.slice(0, 300) : '정답과 비교해 보세요.',
+          }
+        })
+        send(res, 200, { results })
+        return
+      }
       if (path === '/api/register' || path === '/api/login') {
         if (req.method !== 'POST') fail(405, '허용되지 않은 요청이에요.')
-        const ip = req.socket.remoteAddress
-        const recent = (attempts.get(ip) || []).filter((time) => time > Date.now() - 60000)
-        if (recent.length >= 10) fail(429, '잠시 후 다시 시도해 주세요.')
-        recent.push(Date.now())
-        attempts.set(ip, recent)
+        if (rateLimited(attempts, req.socket.remoteAddress, 10, 60000))
+          fail(429, '잠시 후 다시 시도해 주세요.')
         const { username, password } = await jsonBody(req)
         if (
           typeof username !== 'string' ||

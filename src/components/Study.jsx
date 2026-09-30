@@ -18,7 +18,8 @@ import {
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import NoteStudy from './NoteStudy'
-import { masksIn, wrongMaskIds } from '../lib/masks'
+import WrittenQuiz from './WrittenQuiz'
+import { maskKey, masksIn, wrongMaskIds } from '../lib/masks'
 
 export default function Study({
   deck,
@@ -49,6 +50,7 @@ export default function Study({
   const [reviewMode, setReviewMode] = useState('all')
   const [focusByCard, setFocusByCard] = useState({})
   const [drag, setDrag] = useState(0)
+  const [writtenResults, setWrittenResults] = useState(null)
   const pointer = useRef(null)
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
@@ -76,8 +78,16 @@ export default function Study({
 
   useEffect(() => {
     setRevealed(new Set())
+    setWrittenResults(null)
     if (card) onPosition(card.id)
   }, [card?.id])
+  const written = card?.answerMode === 'written' && cardMasks.length > 0
+  const blanksLocked = written && !writtenResults
+  const submitWrittenResults = (graded) => {
+    setWrittenResults(graded)
+    setRevealed(new Set(maskIds))
+    cardMasks.forEach((mask, index) => onMarkWrong(card.id, maskKey(mask), !graded[index]?.correct))
+  }
   const toggle = (id) =>
     setRevealed((prev) => {
       const next = new Set(prev)
@@ -142,13 +152,15 @@ export default function Study({
         move(1)
       }
       if (!complete && card) {
-        if (e.code === 'Space' && !e.target.closest('button')) {
+        if (!written && e.code === 'Space' && !e.target.closest('button')) {
           e.preventDefault()
           allVisible ? rate('known') : revealNext()
         }
-        if (e.key === '1') rate('again')
-        if (e.key === '2') rate('known')
-        if (e.key.toLowerCase() === 'r') setRevealed(new Set())
+        if (!written || writtenResults) {
+          if (e.key === '1') rate('again')
+          if (e.key === '2') rate('known')
+        }
+        if (!written && e.key.toLowerCase() === 'r') setRevealed(new Set())
       }
     }
     window.addEventListener('keydown', keydown)
@@ -398,7 +410,7 @@ export default function Study({
                       <NoteStudy
                         body={card.body}
                         revealed={revealed}
-                        onToggle={toggle}
+                        onToggle={blanksLocked ? undefined : toggle}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
                         onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
@@ -408,7 +420,7 @@ export default function Study({
                         body={card.body}
                         align={card.align}
                         revealed={revealed}
-                        onToggle={toggle}
+                        onToggle={blanksLocked ? undefined : toggle}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
                         onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
@@ -421,7 +433,7 @@ export default function Study({
                         ? `${revealed.size} / ${maskIds.length}개 공개`
                         : '내용을 떠올려 보세요'}
                     </span>
-                    {maskIds.length > 0 && (
+                    {maskIds.length > 0 && !written && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -442,8 +454,19 @@ export default function Study({
                     )}
                   </div>
                 </article>
+                {written && (
+                  <WrittenQuiz
+                    deckId={deck.id}
+                    card={card}
+                    masks={cardMasks}
+                    results={writtenResults}
+                    onResults={submitWrittenResults}
+                  />
+                )}
                 <div className="study-dock">
-                  {!allVisible ? (
+                  {written && !writtenResults ? (
+                    <p className="action-hint">빈칸별 답을 입력하고 AI 채점을 요청하세요.</p>
+                  ) : !allVisible ? (
                     <>
                       <Button className="reveal-next" onClick={revealNext}>
                         <Eye size={18} /> 빈칸 하나씩 보기 <kbd>Space</kbd>

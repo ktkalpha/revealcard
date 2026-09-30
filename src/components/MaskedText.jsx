@@ -14,6 +14,7 @@ export default function MaskedText({
   const masks = maskParts || prepared.masks
   const maskButton = (part, ordinal) => {
     const focused = !focusIds || focusIds.has(part.id)
+    const locked = focused && !onToggle
     const visible = !focused || revealed.has(part.id)
     const key = maskKey(part)
     const wrong = wrongIds?.has(key)
@@ -23,9 +24,15 @@ export default function MaskedText({
           type="button"
           className={`mask ${visible ? 'revealed' : ''} ${wrong ? 'mask-wrong' : ''}`}
           aria-pressed={visible}
-          aria-label={visible ? `${part.text}, 다시 가리기` : `${ordinal}번째 빈칸 정답 보기`}
-          onClick={() => focused && onToggle(part.id)}
-          disabled={!focused}
+          aria-label={
+            locked
+              ? `${ordinal}번째 빈칸, 채점 후 확인할 수 있어요`
+              : visible
+                ? `${part.text}, 다시 가리기`
+                : `${ordinal}번째 빈칸 정답 보기`
+          }
+          onClick={() => focused && !locked && onToggle(part.id)}
+          disabled={!focused || locked}
         >
           <span className="mask-answer" aria-hidden="true">{part.text}</span>
           {!visible && <span className="mask-question" aria-hidden="true">?</span>}

@@ -86,10 +86,10 @@ export function loadDraft(storage) {
   }
 }
 export function importCards(existing, incoming, skipDuplicates) {
-  const seen = new Set(existing.map((c) => JSON.stringify([c.title, c.body])))
+  const seen = new Set(existing.map((c) => JSON.stringify([c.title, c.body, c.answerMode || 'reveal'])))
   const added = []
   for (const card of incoming) {
-    const signature = JSON.stringify([card.title, card.body])
+    const signature = JSON.stringify([card.title, card.body, card.answerMode || 'reveal'])
     if (skipDuplicates && seen.has(signature)) continue
     seen.add(signature)
     added.push({ ...card, id: uid() })

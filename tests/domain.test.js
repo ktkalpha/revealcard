@@ -11,6 +11,7 @@ import {
 } from '../src/lib/masks.js'
 import { parseCardSet, exportCardSet } from '../src/cardSet.js'
 import { loadLibrary, STORAGE_KEY, importCards } from '../src/lib/storage.js'
+import { blooketRows, exportBlooketCsv } from '../src/lib/blooket.js'
 
 const storage = (values) => ({ getItem: (key) => values[key] ?? null })
 test('selecting part of a word and toggling that mask preserves surrounding text', () => {
@@ -71,6 +72,34 @@ test('card sets round-trip exact Korean text, whitespace, and masks without inte
   })
   assert.equal(JSON.stringify(exported).includes('private-id'), false)
   assert.equal(JSON.stringify(exported).includes('rating'), false)
+})
+test('written answer mode round-trips and Blooket CSV creates one question per mask', () => {
+  const cards = [{
+    title: '광합성', body: '광합성은 [[엽록체]]에서 [[빛에너지]]를 사용한다.', answerMode: 'written',
+  }]
+  const parsed = parseCardSet(JSON.stringify(exportCardSet(cards, '과학')))
+  assert.equal(parsed.cards[0].answerMode, 'written')
+  const rows = blooketRows(cards)
+  assert.equal(rows.length, 2)
+  assert.match(rows[0].question, /____/)
+  assert.equal(rows[0].answers[0], '엽록체')
+  const csv = exportBlooketCsv(cards)
+  assert.ok(csv.startsWith('\uFEFF"Question #"'))
+  assert.match(csv, /"Correct Answer\(s\)"/)
+})
+test('Blooket questions blank every sibling mask so other answers never leak into the stem', () => {
+  const cards = [{
+    title: '세포', body: '[[미토콘드리아]]는 에너지를, [[리보솜]]은 단백질을 만든다.',
+  }]
+  const rows = blooketRows(cards)
+  assert.equal(rows.length, 2)
+  for (const row of rows) {
+    assert.equal(row.question.includes('미토콘드리아'), false)
+    assert.equal(row.question.includes('리보솜'), false)
+    assert.match(row.question, /____.*____/)
+  }
+  assert.equal(rows[0].answers[0], '미토콘드리아')
+  assert.equal(rows[1].answers[0], '리보솜')
 })
 test('rejects broken, incompatible, empty, excessive, and malformed imported sets', () => {
   const fixture = exportCardSet([{ title: 'A', body: '[[B]]' }])
