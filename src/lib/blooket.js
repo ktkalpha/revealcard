@@ -15,10 +15,16 @@ export function blooketRows(cards) {
   const rows = []
   for (const card of cards) {
     const masks = masksIn(card.body)
+    if (!masks.length) continue
+    let cursor = 0
+    let maskedBody = ''
+    for (const mask of masks) {
+      maskedBody += card.body.slice(cursor, mask.start) + '____'
+      cursor = mask.end
+    }
+    maskedBody += card.body.slice(cursor)
+    const questionBody = clean(maskedBody)
     for (const target of masks) {
-      const questionBody = clean(
-        card.body.slice(0, target.start) + '____' + card.body.slice(target.end),
-      )
       const correct = clean(target.text)
       const distractors = answers.filter((answer) => answer !== correct).slice(0, 3)
       if (!distractors.length) distractors.push('해당 없음')

@@ -87,6 +87,20 @@ test('written answer mode round-trips and Blooket CSV creates one question per m
   assert.ok(csv.startsWith('\uFEFF"Question #"'))
   assert.match(csv, /"Correct Answer\(s\)"/)
 })
+test('Blooket questions blank every sibling mask so other answers never leak into the stem', () => {
+  const cards = [{
+    title: '세포', body: '[[미토콘드리아]]는 에너지를, [[리보솜]]은 단백질을 만든다.',
+  }]
+  const rows = blooketRows(cards)
+  assert.equal(rows.length, 2)
+  for (const row of rows) {
+    assert.equal(row.question.includes('미토콘드리아'), false)
+    assert.equal(row.question.includes('리보솜'), false)
+    assert.match(row.question, /____.*____/)
+  }
+  assert.equal(rows[0].answers[0], '미토콘드리아')
+  assert.equal(rows[1].answers[0], '리보솜')
+})
 test('rejects broken, incompatible, empty, excessive, and malformed imported sets', () => {
   const fixture = exportCardSet([{ title: 'A', body: '[[B]]' }])
   for (const data of [
