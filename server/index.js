@@ -7,4 +7,5 @@ const app = await createApp({
   secureCookies: process.env.COOKIE_SECURE === '1',
 })
 const port = Number(process.env.PORT || 3001)
-app.listen(port, () => console.log(`Revealcard server: http://localhost:${port}`))
+const host = process.env.HOST || '0.0.0.0'
+app.listen(port, host, () => console.log(`Revealcard server: http://localhost:${port}`))

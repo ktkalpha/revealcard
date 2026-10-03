@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
+import { matchingError } from '../src/lib/matching.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
 
@@ -13,6 +14,7 @@ const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
@@ -48,17 +50,17 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
-    (card.kind !== undefined && card.kind !== 'note') ||
+    (card.kind !== undefined && !['note', 'matching'].includes(card.kind)) ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
-    bodyError(card.body)
+    (card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body))
   )
     fail(400, '카드 제목, 내용 또는 빈칸 표시를 확인해 주세요.')
   return {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
-    ...(card.kind === 'note' ? { kind: 'note' } : {}),
+    ...(['note', 'matching'].includes(card.kind) ? { kind: card.kind } : {}),
     ...(card.align ? { align: card.align } : {}),
   }
 }
@@ -118,6 +120,16 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
     try {
       const url = new URL(req.url, 'http://localhost')
       const path = url.pathname
+      if (path === '/api/app-update' && ['GET', 'HEAD'].includes(req.method)) {
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Cloudflare-CDN-Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        res.end(req.method === 'HEAD' ? undefined : await readFile(new URL('./update.html', import.meta.url)))
+        return
+      }
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, '허용되지 않은 요청이에요.')
         const file = resolve(distDir, `.${path === '/' ? '/index.html' : path}`)
@@ -127,6 +139,13 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         if (!target) fail(404, '파일을 찾을 수 없어요.')
         res.writeHead(200, {
           'Content-Type': contentTypes[extname(file)] || 'application/octet-stream',
+          // Only content-hashed build assets are safe to cache across releases.
+          'Cache-Control': /^\/assets\/.+-[\w-]+\.(js|css)$/.test(path)
+            ? 'public, max-age=31536000, immutable'
+            : 'no-store',
+          'Cloudflare-CDN-Cache-Control': path.startsWith('/assets/')
+            ? 'public, max-age=31536000'
+            : 'no-store',
           'X-Content-Type-Options': 'nosniff',
         })
         if (req.method === 'HEAD') res.end()

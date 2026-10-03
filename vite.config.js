@@ -32,4 +32,7 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: ['revealcard.kobyte01server.me'],
+  },
 })

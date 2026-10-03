@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Tunnel for Revealcard
+Requires=revealcard.service
+After=revealcard.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate --config /home/kobyte01/.cloudflared/revealcard.yml tunnel run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

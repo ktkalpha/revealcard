@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
+import MatchingEditor from './MatchingEditor'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
 
 export default function Editor({
@@ -97,6 +98,7 @@ export default function Editor({
     e.preventDefault()
     if (canSave) onSave()
   }
+  if (card.kind === 'matching') return <MatchingEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
   return (
     <main id="main" className="editor-page">
       <div className="editor-top">

@@ -1,3 +1,4 @@
+import { matchingError } from './lib/matching.js'
 import { bodyError } from './lib/masks.js'
 
 export const CARD_SET_FORMAT = 'revealcard.card-set'
@@ -11,7 +12,7 @@ export function exportCardSet(cards, name = '나의 암기 카드') {
     cards: cards.map(({ title, body, align, kind }) => ({
       title,
       body,
-      ...(kind === 'note' ? { kind } : {}),
+      ...(['note', 'matching'].includes(kind) ? { kind } : {}),
       ...(align && align !== 'center' ? { align } : {}),
     })),
   }
@@ -52,14 +53,14 @@ export function parseCardSet(text) {
       throw new Error(`${index + 1}번 카드가 너무 깁니다.`)
     if (card.align !== undefined && !['left', 'center', 'right'].includes(card.align))
       throw new Error(`${index + 1}번 카드의 정렬 값이 올바르지 않습니다.`)
-    if (card.kind !== undefined && card.kind !== 'note')
+    if (card.kind !== undefined && !['note', 'matching'].includes(card.kind))
       throw new Error(`${index + 1}번 카드의 유형이 올바르지 않습니다.`)
-    const error = bodyError(card.body)
+    const error = card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)
     if (error) throw new Error(`${index + 1}번 카드: ${error}`)
     return {
       title: card.title,
       body: card.body,
-      ...(card.kind === 'note' ? { kind: 'note' } : {}),
+      ...(['note', 'matching'].includes(card.kind) ? { kind: card.kind } : {}),
       ...(card.align && card.align !== 'center' ? { align: card.align } : {}),
     }
   })

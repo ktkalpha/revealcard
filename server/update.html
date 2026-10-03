@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Revealcard 업데이트</title>
+<style>body{font-family:system-ui,sans-serif;background:#f7f7f3;color:#242521;margin:0;padding:32px;line-height:1.7}main{max-width:480px;margin:15vh auto}h1{font-size:24px}a{color:inherit}button{font:inherit;padding:10px 16px}</style></head>
+<body><main><h1>새로운 Revealcard를 준비하고 있어요.</h1><p id="status" role="status">업데이트가 끝나면 학습 화면으로 이동합니다.</p><p>저장된 카드와 학습 기록은 유지됩니다.</p><button id="retry" hidden onclick="location.reload()">다시 시도</button></main>
+<script>
+(async () => {
+  const status = document.getElementById('status')
+  let finished = false
+  const finish = () => { if (!finished) { finished = true; location.replace('/') } }
+  const fail = () => {
+    if (finished) return
+    status.textContent = '온라인 상태에서 다시 시도해 주세요.'
+    document.getElementById('retry').hidden = false
+  }
+  if (!('serviceWorker' in navigator)) { finish(); return }
+  // This recovery page is outside the old worker's /api navigation fallback.
+  // A unique URL also avoids copies cached before no-store headers were added.
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js?update=' + Date.now(), { scope: '/', updateViaCache: 'none' })
+    const worker = registration.installing || registration.waiting
+    if (!worker || worker.state === 'activated') { finish(); return }
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'activated') finish()
+      if (worker.state === 'redundant') fail()
+    })
+    setTimeout(fail, 15000)
+  } catch { fail() }
+})()
+</script></body></html>

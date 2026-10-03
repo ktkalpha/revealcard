@@ -1,0 +1,18 @@
+[Unit]
+Description=Revealcard application server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kobyte01/revealcard
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=4173
+Environment=COOKIE_SECURE=1
+Environment=DATA_FILE=/home/kobyte01/.local/share/revealcard/revealcard.json
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

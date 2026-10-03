@@ -20,6 +20,24 @@ import {
   uid,
 } from './lib/storage'
 import './style.css'
+import { registerSW } from 'virtual:pwa-register'
+
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    if (!registration) return
+    const checkUpdate = () => {
+      if (navigator.onLine && !registration.installing)
+        registration.update().catch(() => {})
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkUpdate()
+    })
+    window.addEventListener('online', checkUpdate)
+    setInterval(checkUpdate, 60 * 60 * 1000)
+    checkUpdate()
+  },
+})
 
 function App() {
   const [library, setLibrary] = useState({

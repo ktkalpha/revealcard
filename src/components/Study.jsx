@@ -18,6 +18,7 @@ import {
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import NoteStudy from './NoteStudy'
+import MatchingGame from './MatchingGame'
 import { masksIn, wrongMaskIds } from '../lib/masks'
 
 export default function Study({
@@ -43,6 +44,8 @@ export default function Study({
       deck.cards.findIndex((c) => c.id === position),
     ),
   )
+  const [gameVersion, setGameVersion] = useState(0)
+  const [matchingDone, setMatchingDone] = useState(false)
   const [revealed, setRevealed] = useState(new Set())
   const [results, setResults] = useState({})
   const [complete, setComplete] = useState(false)
@@ -59,7 +62,7 @@ export default function Study({
   const maskIds = cardMasks
     .filter((mask) => !focusIds || focusIds.has(mask.id))
     .map((mask) => mask.id)
-  const allVisible = maskIds.every((id) => revealed.has(id))
+  const allVisible = card?.kind === 'matching' ? matchingDone : maskIds.every((id) => revealed.has(id))
   const reviewIds = deck.cards
     .filter((c) => ratings[c.id] === 'again')
     .map((c) => c.id)
@@ -76,6 +79,7 @@ export default function Study({
 
   useEffect(() => {
     setRevealed(new Set())
+    setMatchingDone(false)
     if (card) onPosition(card.id)
   }, [card?.id])
   const toggle = (id) =>
@@ -104,6 +108,8 @@ export default function Study({
     move(1)
   }
   const start = (ids, mode = 'all') => {
+    setMatchingDone(false)
+    setGameVersion((version) => version + 1)
     setQueue(ids)
     setCursor(0)
     setRevealed(new Set())
@@ -141,7 +147,7 @@ export default function Study({
         e.preventDefault()
         move(1)
       }
-      if (!complete && card) {
+      if (!complete && card && card.kind !== 'matching') {
         if (e.code === 'Space' && !e.target.closest('button')) {
           e.preventDefault()
           allVisible ? rate('known') : revealNext()
@@ -361,6 +367,7 @@ export default function Study({
                       ? `translateX(${drag}px) rotate(${drag / 35}deg)`
                       : undefined,
                   }}
+                  data-no-swipe={card.kind === 'matching' ? true : undefined}
                   onPointerDown={card.kind === 'note' ? undefined : pointerDown}
                   onPointerMove={card.kind === 'note' ? undefined : pointerMove}
                   onPointerUp={card.kind === 'note' ? undefined : pointerEnd}
@@ -378,7 +385,7 @@ export default function Study({
                 >
                   <div className="sheet-top">
                     <span className="overline">
-                      {card.kind === 'note' ? 'NOTE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
+                      {card.kind === 'matching' ? 'SPECIAL GAME' : card.kind === 'note' ? 'NOTE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
                     </span>
                     {onEdit && (
                       <Button
@@ -394,7 +401,9 @@ export default function Study({
                   </div>
                   <div className={card.kind === 'note' ? 'note-study-content' : 'sheet-content'} key={card.id}>
                     <h1 style={card.kind === 'note' ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
-                    {card.kind === 'note' ? (
+                    {card.kind === 'matching' ? (
+                      <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
+                    ) : card.kind === 'note' ? (
                       <NoteStudy
                         body={card.body}
                         revealed={revealed}
@@ -415,7 +424,7 @@ export default function Study({
                       />
                     )}
                   </div>
-                  <div className="sheet-bottom" data-no-swipe>
+                  {card.kind !== 'matching' && <div className="sheet-bottom" data-no-swipe>
                     <span aria-live="polite">
                       {maskIds.length
                         ? `${revealed.size} / ${maskIds.length}개 공개`
@@ -440,10 +449,12 @@ export default function Study({
                         )}
                       </Button>
                     )}
-                  </div>
+                  </div>}
                 </article>
                 <div className="study-dock">
-                  {!allVisible ? (
+                  {card.kind === 'matching' && !matchingDone ? (
+                    <p className="action-hint">모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.</p>
+                  ) : !allVisible ? (
                     <>
                       <Button className="reveal-next" onClick={revealNext}>
                         <Eye size={18} /> 빈칸 하나씩 보기 <kbd>Space</kbd>
@@ -475,19 +486,19 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    {card.kind !== 'note' && <span className="swipe-tip">좌우로 밀어 카드 이동</span>}
+                    {!['note', 'matching'].includes(card.kind) && <span className="swipe-tip">좌우로 밀어 카드 이동</span>}
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />
                     </Button>
                   </div>
                 </div>
-                <p className="keyboard-tip">
+                {card.kind !== 'matching' && <p className="keyboard-tip">
                   <Keyboard size={14} />
                   <span>← → 카드 이동</span>
                   <span>Space 빈칸 보기</span>
                   <span>R 다시 가리기</span>
-                </p>
+                </p>}
               </>
             )
           )}

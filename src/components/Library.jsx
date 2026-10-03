@@ -298,7 +298,7 @@ export default function Library({
                       </span>
                       <span className="card-meta">
                         {card.kind === 'note' && <span className="note-kind"><BookOpen size={12} /> 노트</span>}
-                        빈칸 {masksIn(card.body).length}개
+                        {card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
                         {ratings[card.id] && (
                           <span className={`status-label ${ratings[card.id]}`}>
                             {ratings[card.id] === 'known' ? (
