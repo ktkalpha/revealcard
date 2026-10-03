@@ -442,7 +442,7 @@ function App() {
   if (!loaded)
     return <div className="loading-screen" role="status">카드 셋을 불러오는 중…</div>
   return (
-    <div className="app">
+    <div className={`app view-${view}`}>
       <a className="skip-link" href="#main">
         본문으로 이동
       </a>
@@ -475,6 +475,22 @@ function App() {
             <Layers3 size={16} /> 카드 라이브러리
           </button>
         </nav>
+        <div className="workspace-decks">
+          <p className="rail-label">카드 셋 <span>{library.decks.length}</span></p>
+          <div className="rail-deck-list">
+            {library.decks.map((item) => (
+              <button key={item.id} className={`rail-deck ${item.id === deck.id ? 'selected' : ''}`}
+                aria-pressed={item.id === deck.id} onClick={() => { selectDeck(item.id); setView('study') }}>
+                <span className="rail-deck-icon"><BookOpen size={15} /></span>
+                <span>{item.name}</span><small>{item.cards.length}</small>
+              </button>
+            ))}
+          </div>
+          <button className="rail-create" onClick={() => offline ? notify('다시 연결한 뒤 카드 셋을 만들 수 있어요.') : user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })} disabled={offline}>
+            <Plus size={15} /> 새 카드 셋
+          </button>
+        </div>
+        <div className="rail-note"><span>MAKE IT STICK.</span><p>한 장의 작은 반복,<br />오래 남는 나의 지식.</p></div>
         <div className="header-actions">
           <Button className="header-theme" variant="ghost" size="icon" aria-label="사이트 색상 설정" title="사이트 색상 설정" onClick={() => setModal({ type: 'theme' })}><Palette size={18} /></Button>
           <Button

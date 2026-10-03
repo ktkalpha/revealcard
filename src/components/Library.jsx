@@ -80,7 +80,7 @@ export default function Library({
       <div className="section-heading">
         <div>
           <p className="workspace-eyebrow"><Layers3 size={14} /> YOUR COLLECTION</p>
-          <h1>{user ? '나의 기억 저장소.' : '함께 만드는 기억.'}</h1>
+          <h1>카드 라이브러리</h1>
           <p className="muted">
             {user ? `${user.username}의 카드부터 함께 나누는 지식까지, 한곳에.` : '좋은 지식은 함께 나눌 때 더 오래 남아요.'}
           </p>

@@ -216,10 +216,9 @@ export default function Study({
     >
       <div className="study-layout">
         <aside className="study-overview" aria-label="학습 현황">
-          <p className="workspace-eyebrow"><Sparkles size={14} /> YOUR DAILY PRACTICE</p>
-          <h2>작은 반복이,<br /><span>큰 기억으로.</span></h2>
+          <p className="workspace-eyebrow"><Target size={14} /> MY PROGRESS</p>
+          <h2>한 장씩,<br /><span>더 선명하게.</span></h2>
           <p className="overview-description">가리고, 떠올리고, 기억하기.<br />오늘도 한 장씩 채워보세요.</p>
-          <div className="overview-art" aria-hidden="true"><div className="art-card art-back" /><div className="art-card art-middle" /><div className="art-card art-front"><Layers3 size={25} /><span>reveal.</span><i /><i /></div><span className="art-spark">✦</span></div>
           <div className="memory-summary">
             <div className="memory-summary-label"><Target size={16} /><span>나의 기억 현황</span><strong>{rememberedPercent}%</strong></div>
             <div className="memory-meter"><span style={{ width: `${rememberedPercent}%` }} /></div>
@@ -228,6 +227,7 @@ export default function Study({
           <div className="overview-tip"><span>작은 학습 팁</span><p>정답을 보기 전 잠깐 멈춰보세요.<br />떠올리는 순간, 기억이 깊어져요.</p></div>
         </aside>
         <div className="study-workspace">
+          <div className="workspace-heading"><div><p className="workspace-eyebrow">STUDY WORKSPACE</p><h2>오늘의 학습</h2><p>정답을 떠올리는 순간, 기억이 시작돼요.</p></div><span className="workspace-status"><span />{deck.cards.length}장의 가능성</span></div>
       <div className="study-toolbar">
         <div className="deck-select">
           <BookOpen size={17} />
