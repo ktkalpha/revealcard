@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Check, Layers3, LogIn, LogOut, Plus, RotateCcw, X } from 'lucide-react'
+import { Check, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
 import NoteEditor from './components/NoteEditor'
+import ThemeDialog from './components/ThemeDialog'
+import { applyTheme, loadTheme, THEME_KEY } from './lib/theme'
 import HistoryDialog from './components/HistoryDialog'
 import AuthDialog from './components/AuthDialog'
 import Modal from './components/Modal'
@@ -41,6 +43,13 @@ registerSW({
 })
 
 function App() {
+  const [theme, setTheme] = useState(loadTheme)
+  const [themeStorageError, setThemeStorageError] = useState(false)
+  useEffect(() => {
+    applyTheme(theme)
+    try { localStorage.setItem(THEME_KEY, JSON.stringify(theme)); setThemeStorageError(false) }
+    catch { setThemeStorageError(true) }
+  }, [theme])
   const [library, setLibrary] = useState({
     decks: [], selectedDeckId: null, ratings: {}, positions: {}, wrongMasks: {},
   })
@@ -466,6 +475,7 @@ function App() {
           </button>
         </nav>
         <div className="header-actions">
+          <Button className="header-theme" variant="ghost" size="icon" aria-label="사이트 색상 설정" title="사이트 색상 설정" onClick={() => setModal({ type: 'theme' })}><Palette size={18} /></Button>
           <Button
             className="header-add"
             size="sm"
@@ -631,6 +641,7 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
+      {modal?.type === 'theme' && <ThemeDialog theme={theme} onChange={setTheme} storageError={themeStorageError} onClose={() => setModal(null)} />}
       {modal?.type === 'history' && <HistoryDialog deck={deck} offline={offline} onClose={() => setModal(null)} onRestore={async (version, baseVersion) => {
         const result = await run(() => api(`/api/decks/${deck.id}/restore`, { method: 'POST', body: { version, baseVersion } }), deck.id)
         if (result) { setModal(null); notify('이전 버전을 복원했어요.') }
