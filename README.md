@@ -32,29 +32,36 @@ PWA 설치와 서비스 워커는 빌드된 앱을 `localhost` 또는 HTTPS로 �
 
 ## 실험실 · 커스텀 펫
 
-로그인한 사용자만 사용할 수 있습니다. **실험실 → 이미지 선택**으로 원본을 올리면 로컬 Mac의 Codex CLI가 자동으로 표정 4가지를 생성하고 서버에 반환합니다. 사용자가 프롬프트를 복사하거나 완성 이미지를 다시 올릴 필요가 없습니다. ChatGPT로 로그인된 Codex의 내장 이미지 생성 도구를 사용하며 별도 API 키는 필요하지 않습니다.
+로그인한 사용자만 사용할 수 있습니다. **실험실 → 이미지 선택**으로 원본을 올리면 웹사이트 서버에 설치된 Codex CLI가 자동으로 표정 4가지를 생성합니다. 사용자가 프롬프트를 복사하거나 완성 이미지를 다시 올릴 필요가 없습니다. 서버의 ChatGPT 로그인과 내장 이미지 생성 도구를 사용하며 별도 API 키는 필요하지 않습니다. 사용자 컴퓨터를 켜 둘 필요가 없습니다.
 
 펫은 학습 화면 구석에 계속 표시됩니다. 이름·크기·좌우 위치를 바꿀 수 있으며, 기억한 카드는 웃음, 다시 볼 카드는 응원, 학습 완료는 축하 표정으로 반응합니다. 생성 중에는 원본 이미지를 표시합니다. 원본과 표정은 서버에 계정별로 저장하며 해당 계정으로 로그인해야 읽을 수 있습니다. PNG/JPG/WebP, 최대 8MB를 지원합니다.
 
-서버는 `DATA_FILE`과 같은 디렉터리의 `pets/`에 설정·작업 큐·이미지를 저장합니다. 이 디렉터리도 백업하세요. 웹사이트는 생성 요청을 저장하고, 로컬 작업기는 기존 SSH 연결로 큐를 가져옵니다. Codex 로그인 정보는 Mac에만 남습니다.
+서버는 `DATA_FILE`과 같은 디렉터리의 `pets/`에 설정·작업 큐·이미지를 저장합니다. 이 디렉터리도 백업하세요. 생성 작업기는 같은 서버에서 큐를 직접 읽습니다. Codex 로그인 정보는 서버에만 남습니다.
 
-### 로컬 Codex 작업기
+### 서버 Codex 작업기
 
-Mac에서 `codex login status`가 ChatGPT 로그인 상태인지 확인하고 다음을 실행합니다.
+서버 사용자 `kobyte01`의 Codex는 `/home/kobyte01/.local/bin/codex`에 설치되어 있습니다. `codex login status`가 ChatGPT 로그인 상태인지 확인하세요. 한 번 실행하려면:
 
 ```sh
-node worker/pet-worker.mjs
+PET_DATA_DIR=/home/kobyte01/.local/share/revealcard/pets node worker/pet-worker.mjs --once
 ```
 
-로그인 시 자동 실행하려면 Mac에서 `node worker/install-macos.mjs`를 실행합니다. 설치한 프로젝트 폴더를 이동하거나 삭제하지 마세요.
+`PET_DATA_DIR`, `PET_CODEX_BIN`, `PET_WORK_DIR`로 저장 디렉터리·실행 파일·작업 디렉터리를 바꿀 수 있습니다. `--once`는 대기 작업 한 개만 처리하고 종료합니다. 기본 저장 디렉터리는 `~/.local/share/revealcard/pets`, Codex 경로는 `~/.local/bin/codex`, 작업 디렉터리는 저장 디렉터리 안의 `worker-jobs/`입니다.
 
-기본 SSH 대상은 `kobyte01@100.67.255.79`, 서버 프로젝트는 `/home/kobyte01/revealcard`, 펫 저장 경로는 `/home/kobyte01/.local/share/revealcard/pets`입니다. `PET_SSH_TARGET`, `PET_REMOTE_PROJECT`, `PET_REMOTE_DATA`, `PET_CODEX_BIN`, `PET_WORK_DIR`로 바꿀 수 있습니다. SSH 키 로그인이 필요합니다. `--once`는 대기 작업 한 개만 처리하고 종료합니다.
-
-작업기는 5초마다 큐를 확인하며, 내장 이미지 생성으로 만든 투명 2×2 PNG를 자동 반환합니다. 작업 중단 시 20분 후 재시도하며 최대 2회 시도합니다. 생성 실패는 실험실에서 다시 시도할 수 있습니다. Mac이 잠자기·종료 상태면 요청은 대기하고, 다시 연결되면 처리됩니다. 로컬 작업 산출물은 `worker/jobs/`에 보관됩니다.
-
-설치된 Mac 로그인 작업은 `me.kobyte01.revealcard-pet-worker`입니다. 관리 명령:
+서버 자동 실행 설치:
 
 ```sh
-launchctl print gui/$(id -u)/me.kobyte01.revealcard-pet-worker
-launchctl kickstart -k gui/$(id -u)/me.kobyte01.revealcard-pet-worker
+mkdir -p ~/.config/systemd/user
+cp worker/revealcard-pet-worker.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now revealcard-pet-worker.service
+```
+
+서비스 파일의 프로젝트·Codex·저장 경로는 현재 서버 설정에 맞춰져 있습니다. 다른 서버에서는 경로를 수정하세요. 작업기는 5초마다 큐를 확인하며 투명 2×2 PNG를 자동 적용합니다. 작업 중단 시 20분 후 재시도하며 최대 2회 시도합니다. 생성 실패는 실험실에서 다시 시도할 수 있습니다.
+
+상태와 로그 확인:
+
+```sh
+systemctl --user status revealcard-pet-worker.service
+journalctl --user -u revealcard-pet-worker.service -n 30
 ```

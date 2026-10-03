@@ -1,0 +1,16 @@
+[Unit]
+Description=Revealcard server Codex pet image worker
+After=network-online.target revealcard.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kobyte01/revealcard
+Environment=PATH=/home/kobyte01/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PET_CODEX_BIN=/home/kobyte01/.local/bin/codex
+Environment=PET_DATA_DIR=/home/kobyte01/.local/share/revealcard/pets
+ExecStart=/usr/bin/node /home/kobyte01/revealcard/worker/pet-worker.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

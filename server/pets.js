@@ -62,7 +62,7 @@ export function createPets(directory) {
     },
     async claim(){return change(async data=>{
       data.workerSeen=Date.now()
-      for(const job of Object.values(data.jobs))if(job.status==='running'&&job.leaseUntil<Date.now()) {job.status=job.attempts>=2?'failed':'queued';job.error='로컬 Codex 작업이 중단됐어요. 다시 생성해 주세요.'}
+      for(const job of Object.values(data.jobs))if(job.status==='running'&&job.leaseUntil<Date.now()) {job.status=job.attempts>=2?'failed':'queued';job.error='Codex 작업이 중단됐어요. 다시 생성해 주세요.'}
       const job=Object.values(data.jobs).filter(j=>j.status==='queued').sort((a,b)=>a.createdAt-b.createdAt)[0]
       if(!job)return null
       job.status='running';job.attempts++;job.claim=randomUUID();job.leaseUntil=Date.now()+20*60*1000
@@ -71,6 +71,6 @@ export function createPets(directory) {
     })},
     async heartbeat(){return change(data=>{data.workerSeen=Date.now();return {ok:true}})},
     async finish(id,claim,image){if(!uuid.test(id))throw error(400,'Invalid job');return change(async data=>{const job=data.jobs[id];if(!job||job.claim!==claim||job.status!=='running')throw error(409,'작업이 이미 끝났어요.');job.output=await writeImage(image);job.status='done';job.finishedAt=Date.now();return {ok:true}})},
-    async fail(id,claim){return change(data=>{const job=data.jobs[id];if(job?.claim===claim&&job.status==='running'){job.status='failed';job.error='로컬 Codex에서 이미지를 만들지 못했어요. 잠시 후 다시 생성해 주세요.'}return {ok:true}})},
+    async fail(id,claim){return change(data=>{const job=data.jobs[id];if(job?.claim===claim&&job.status==='running'){job.status='failed';job.error='Codex에서 이미지를 만들지 못했어요. 잠시 후 다시 생성해 주세요.'}return {ok:true}})},
   }
 }
