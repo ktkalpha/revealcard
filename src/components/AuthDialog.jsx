@@ -9,12 +9,13 @@ export default function AuthDialog({ onClose, onSuccess }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [remember, setRemember] = useState(true)
   const submit = async (event) => {
     event.preventDefault()
     setBusy(true)
     setError('')
     try {
-      await api(`/api/${mode}`, { method: 'POST', body: { username, password } })
+      await api(`/api/${mode}`, { method: 'POST', body: { username, password, remember } })
       await onSuccess()
     } catch (cause) {
       setError(cause.message)
@@ -56,6 +57,7 @@ export default function AuthDialog({ onClose, onSuccess }) {
           onChange={(event) => setPassword(event.target.value)}
           required
         />
+        <label className="auth-remember"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>로그인 유지 <small>30일</small></span></label>
         {error && <p className="field-error" role="alert">{error}</p>}
         <div className="dialog-actions">
           <Button variant="outline" onClick={onClose}>취소</Button>

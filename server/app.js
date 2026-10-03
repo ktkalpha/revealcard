@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, resolve, sep } from 'node:path'
-import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { matchingError } from '../src/lib/matching.js'
 import { bodyError } from '../src/lib/masks.js'
@@ -11,6 +11,15 @@ import { createPets } from './pets.js'
 const hashPassword = promisify(scrypt)
 const MAX_BODY = 25 * 1024 * 1024
 const SESSION_AGE = 30 * 24 * 60 * 60 * 1000
+const BROWSER_SESSION_AGE = 24 * 60 * 60 * 1000
+const sessionKey = token => typeof token === 'string' && /^[a-f0-9]{64}$/.test(token)
+  ? createHash('sha256').update(token).digest('hex') : null
+const liveSession = session => session && typeof session.userId === 'string' && Number.isFinite(session.expires) && session.expires > Date.now()
+const pruneSessions = data => {
+  data.sessions ||= {}
+  for (const [key,session] of Object.entries(data.sessions))
+    if (!liveSession(session)) delete data.sessions[key]
+}
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -135,10 +144,12 @@ async function jsonBody(req) {
 export async function createApp({ dataFile, distDir, secureCookies = false }) {
   const store = await createStore(dataFile)
   const pets = createPets(resolve(dirname(dataFile), 'pets'))
-  const sessions = new Map()
+  // Only token hashes are persisted; the bearer token stays in the HttpOnly cookie.
+  if (Object.values(store.read().sessions || {}).some(session => !liveSession(session)))
+    await store.change(pruneSessions)
   const attempts = new Map()
   const cookie = (token, maxAge) =>
-    `rc_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`
+    `rc_session=${token}; Path=/; HttpOnly; SameSite=Lax${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}${secureCookies ? '; Secure' : ''}`
 
   return createServer(async (req, res) => {
     try {
@@ -184,9 +195,9 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           fail(403, '다른 출처의 요청은 허용되지 않아요.')
       }
       const token = /(?:^|;\s*)rc_session=([^;]+)/.exec(req.headers.cookie || '')?.[1]
-      const session = sessions.get(token)
-      if (session && session.expires < Date.now()) sessions.delete(token)
-      const user = session?.expires > Date.now()
+      const key = sessionKey(token)
+      const session = key ? store.read().sessions?.[key] : null
+      const user = liveSession(session)
         ? store.read().users.find((item) => item.id === session.userId)
         : null
       if (path === '/api/pet' || path.startsWith('/api/pet/')) {
@@ -216,8 +227,9 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         if (recent.length >= 10) fail(429, '잠시 후 다시 시도해 주세요.')
         recent.push(Date.now())
         attempts.set(ip, recent)
-        const { username, password } = await jsonBody(req)
+        const { username, password, remember = true } = await jsonBody(req)
         if (
+          typeof remember !== 'boolean' ||
           typeof username !== 'string' ||
           !/^[a-zA-Z0-9_-]{3,32}$/.test(username) ||
           typeof password !== 'string' ||
@@ -245,13 +257,19 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             fail(401, '아이디 또는 비밀번호가 맞지 않아요.')
         }
         const newToken = randomBytes(32).toString('hex')
-        if (token) sessions.delete(token)
-        sessions.set(newToken, { userId: account.id, expires: Date.now() + SESSION_AGE })
-        send(res, 200, { user: userView(account) }, { 'Set-Cookie': cookie(newToken, SESSION_AGE / 1000) })
+        await store.change(data => {
+          pruneSessions(data)
+          if (key) delete data.sessions[key]
+          data.sessions[sessionKey(newToken)] = {
+            userId: account.id, expires: Date.now() + (remember ? SESSION_AGE : BROWSER_SESSION_AGE),
+          }
+        })
+        send(res, 200, { user: userView(account) }, { 'Set-Cookie': cookie(newToken, remember ? SESSION_AGE / 1000 : undefined) })
         return
       }
       if (path === '/api/logout' && req.method === 'POST') {
-        sessions.delete(token)
+        if (key && store.read().sessions?.[key])
+          await store.change(data => { delete data.sessions[key] })
         send(res, 200, { ok: true }, { 'Set-Cookie': cookie('', 0) })
         return
       }

@@ -258,3 +258,7 @@ footer > span:first-child { color: var(--ink); font-size: 12px; font-weight: 700
 .pet-dragging .custom-pet-touch { transform: none; }
 .pet-dragging .custom-pet-motion { animation: none; }
 @media(prefers-reduced-motion:reduce) { .custom-pet-motion { animation: none !important; } }
+
+.auth-remember { display: flex; align-items: center; gap: 9px; margin-top: 18px; font-size: 13px; cursor: pointer; }
+.auth-remember input[type='checkbox'] { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--accent); flex-shrink: 0; }
+.auth-remember small { color: var(--muted); font-size: 11px; margin-left: 4px; }
