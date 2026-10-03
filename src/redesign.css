@@ -3,11 +3,11 @@
   --radius: 12px;
   --ui-line: color-mix(in srgb, var(--ink) 11%, var(--paper));
   --ui-soft: color-mix(in srgb, var(--ink) 4%, var(--paper));
-  --ui-tint: color-mix(in srgb, var(--accent) 20%, var(--paper));
+  --ui-tint: color-mix(in srgb, var(--accent) 11%, var(--paper));
   --ui-shadow: 0 8px 32px color-mix(in srgb, var(--ink) 5%, transparent);
 }
 body { background: var(--page, #f7f7f3); }
-.app { background-color: color-mix(in srgb, var(--accent) 8%, var(--page, #f7f7f3)); background-image: radial-gradient(ellipse at 85% 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%); }
+.app { background-color: color-mix(in srgb, var(--accent) 3%, var(--page, #f7f7f3)); background-image: radial-gradient(ellipse at 85% 10%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%); }
 h1, h2, h3 { letter-spacing: -.045em; }
 .button { border-radius: 12px; font-size: 13px; transition: background .18s, border-color .18s, box-shadow .18s, transform .18s; }
 .button-md { min-height: 44px; padding: 11px 18px; }
@@ -76,7 +76,7 @@ input:not([type='radio']):not([type='checkbox']):not([type='color']), textarea, 
 .progress-track { height: 4px; background: var(--ui-tint); margin-bottom: 20px; border-radius: 5px; }
 .progress-track > span { background: var(--accent); border-radius: inherit; }
 .paper { border: 1px solid var(--ui-line); border-radius: 24px; box-shadow: var(--ui-shadow); }
-.card-sheet { padding: 19px 32px 15px; min-height: 405px; border-top: 4px solid var(--accent); background: linear-gradient(155deg, color-mix(in srgb, var(--accent) 12%, var(--paper)), var(--paper) 60%); }
+.card-sheet { padding: 19px 32px 15px; min-height: 405px; border-top: 3px solid color-mix(in srgb, var(--accent) 65%, var(--paper)); background: linear-gradient(155deg, color-mix(in srgb, var(--accent) 5%, var(--paper)), var(--paper) 60%); }
 .sheet-top .overline { background: var(--ui-tint); color: var(--accent-ink, var(--accent)); padding: 7px 10px; border-radius: 7px; font-size: 9px; letter-spacing: 1.2px; }
 .sheet-content h1 { font-size: 28px; line-height: 1.5; margin: 30px 0 27px; }
 .sheet-bottom { border-color: var(--ui-line); color: var(--muted); padding-top: 12px; }
@@ -282,10 +282,24 @@ footer > span:first-child { font-weight: 750; font-size: 12px; letter-spacing: -
 .art-back { background: color-mix(in srgb, var(--accent) 50%, var(--paper)); }
 .summary-icon { background: var(--accent); color: var(--on-accent); }
 .library-summary > div { border-top: 3px solid var(--accent); background: linear-gradient(130deg, var(--ui-tint), var(--paper) 75%); }
-.deck-item.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
+.deck-item.selected { border-color: color-mix(in srgb, var(--accent) 30%, var(--paper)); }
 .card-number { background: var(--ui-tint); color: var(--accent-ink, var(--accent)); border-color: color-mix(in srgb, var(--accent) 25%, var(--paper)); }
 .sheet-top .overline { background: var(--accent); color: var(--on-accent); }
-.note-study { border-top: 4px solid var(--accent); }
-.mask:not(.wrong):not(.revealed) { background: color-mix(in srgb, var(--accent) 28%, var(--paper)); color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, var(--paper)); }
+.note-study { border-top: 3px solid color-mix(in srgb, var(--accent) 65%, var(--paper)); }
+.mask:not(.wrong):not(.revealed) { background: color-mix(in srgb, var(--accent) 14%, var(--paper)); color: var(--ink); border-color: color-mix(in srgb, var(--accent) 30%, var(--paper)); }
 .segmented button[aria-pressed='true'] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .theme-mode .button-default, .theme-presets button[aria-pressed='true'] { color: var(--on-accent); background: var(--accent); }
+
+/* Keep broad surfaces calm, with color focused on interaction. */
+.memory-summary { background: var(--ui-tint); color: var(--ink); border-color: var(--ui-line); box-shadow: var(--ui-shadow); }
+.memory-summary-label svg, .memory-summary-label strong { color: var(--accent-ink, var(--accent)); }
+.memory-metrics small, .memory-metrics span { color: var(--muted); opacity: 1; }
+.memory-meter { background: color-mix(in srgb, var(--accent) 18%, var(--paper)); }
+.memory-meter span { background: var(--accent); }
+.art-front { background: var(--paper); color: var(--accent-ink, var(--accent)); border-color: var(--ui-line); }
+.art-front span { color: var(--ink); }
+.art-front i { background: var(--ui-tint); }
+.art-back { background: color-mix(in srgb, var(--accent) 22%, var(--paper)); }
+.library-summary > div { background: linear-gradient(130deg, color-mix(in srgb, var(--accent) 5%, var(--paper)), var(--paper) 75%); }
+.summary-icon { background: var(--ui-tint); color: var(--accent-ink, var(--accent)); }
+.segmented button[aria-pressed='true'] { background: var(--paper); color: var(--accent-ink, var(--accent)); border-color: var(--ui-line); }
