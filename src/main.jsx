@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, Check, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
+import { BookOpen, Check, FlaskConical, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
 import NoteEditor from './components/NoteEditor'
 import ThemeDialog from './components/ThemeDialog'
+import ExperimentsDialog from './components/ExperimentsDialog'
+import usePet from './lib/usePet'
 import { applyTheme, loadTheme, THEME_KEY } from './lib/theme'
 import HistoryDialog from './components/HistoryDialog'
 import AuthDialog from './components/AuthDialog'
@@ -55,6 +57,7 @@ function App() {
     decks: [], selectedDeckId: null, ratings: {}, positions: {}, wrongMasks: {},
   })
   const [user, setUser] = useState(null)
+  const companion = usePet(user?.id || null)
   const [loaded, setLoaded] = useState(false)
   const [view, setView] = useState('study')
   const [draft, setDraft] = useState(null)
@@ -274,11 +277,13 @@ function App() {
         ? prev
         : { ...prev, positions: { ...prev.positions, [deck.id]: cardId } },
     )
-  const rate = (id, value) =>
+  const rate = (id, value) => {
     setLibrary((prev) => ({
       ...prev,
       ratings: { ...prev.ratings, [id]: value },
     }))
+    if (user) companion.react(value)
+  }
   const markWrong = (cardId, key, wrong) =>
     setLibrary((prev) => {
       const next = new Set(prev.wrongMasks[cardId] || [])
@@ -474,6 +479,9 @@ function App() {
           >
             <Layers3 size={16} /> 카드 라이브러리
           </button>
+          <button className={`nav-link ${modal?.type === 'experiments' ? 'active' : ''}`} onClick={() => setModal({ type: 'experiments' })}>
+            <FlaskConical size={16} /> 실험실 <small className="labs-badge">BETA</small>
+          </button>
         </nav>
         <div className="workspace-decks">
           <p className="rail-label">카드 셋 <span>{library.decks.length}</span></p>
@@ -584,6 +592,8 @@ function App() {
           onAdd={() => openEditor()}
           onImport={() => offline ? notify('불러오기는 다시 연결한 뒤 가능해요.') : user ? fileInput.current.click() : setModal({ type: 'auth' })}
           modalOpen={!!modal}
+          companion={user ? companion : null}
+          onPetSettings={() => setModal({ type: 'experiments' })}
         />
       )}
       {view === 'library' && (
@@ -658,6 +668,7 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
+      {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} ready={companion.ready} pet={companion.pet} onUpdate={companion.update} error={companion.error} job={companion.job} workerOnline={companion.workerOnline} onUpload={companion.upload} onGenerate={companion.generate} onClose={() => setModal(null)} />}
       {modal?.type === 'theme' && <ThemeDialog theme={theme} onChange={setTheme} storageError={themeStorageError} onClose={() => setModal(null)} />}
       {modal?.type === 'history' && <HistoryDialog deck={deck} offline={offline} onClose={() => setModal(null)} onRestore={async (version, baseVersion) => {
         const result = await run(() => api(`/api/decks/${deck.id}/restore`, { method: 'POST', body: { version, baseVersion } }), deck.id)

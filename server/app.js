@@ -1,11 +1,12 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { extname, resolve, sep } from 'node:path'
+import { dirname, extname, resolve, sep } from 'node:path'
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { matchingError } from '../src/lib/matching.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
+import { createPets } from './pets.js'
 
 const hashPassword = promisify(scrypt)
 const MAX_BODY = 25 * 1024 * 1024
@@ -133,6 +134,7 @@ async function jsonBody(req) {
 
 export async function createApp({ dataFile, distDir, secureCookies = false }) {
   const store = await createStore(dataFile)
+  const pets = createPets(resolve(dirname(dataFile), 'pets'))
   const sessions = new Map()
   const attempts = new Map()
   const cookie = (token, maxAge) =>
@@ -187,6 +189,22 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
       const user = session?.expires > Date.now()
         ? store.read().users.find((item) => item.id === session.userId)
         : null
+      if (path === '/api/pet' || path.startsWith('/api/pet/')) {
+        if (!user) fail(401, '커스텀 펫은 로그인한 사용자 전용이에요.')
+        if (path.startsWith('/api/pet/assets/') && req.method === 'GET') {
+          const name=path.slice('/api/pet/assets/'.length)
+          const bytes=await pets.asset(user.id,name)
+          res.writeHead(200, {'Content-Type':name.endsWith('.jpg')?'image/jpeg':name.endsWith('.webp')?'image/webp':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+          res.end(bytes);return
+        }
+        let result
+        if(path === '/api/pet' && req.method === 'GET')result=await pets.get(user.id)
+        else if(path === '/api/pet' && req.method === 'PUT')result=await pets.settings(user.id,await jsonBody(req))
+        else if(path === '/api/pet/reference' && req.method === 'POST')result=await pets.reference(user.id,(await jsonBody(req)).image)
+        else if(path === '/api/pet/generate' && req.method === 'POST')result=await pets.generate(user.id)
+        else fail(404,'요청을 찾을 수 없어요.')
+        send(res,200,result);return
+      }
       if (path === '/api/bootstrap' && req.method === 'GET') {
         send(res, 200, { user: userView(user), decks: visibleDecks(store.read(), user) })
         return

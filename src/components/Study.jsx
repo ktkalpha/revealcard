@@ -21,6 +21,7 @@ import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import NoteStudy from './NoteStudy'
 import MatchingGame from './MatchingGame'
+import StudyPet from './StudyPet'
 import { masksIn, wrongMaskIds } from '../lib/masks'
 
 export default function Study({
@@ -38,6 +39,8 @@ export default function Study({
   onAdd,
   onImport,
   modalOpen,
+  companion,
+  onPetSettings,
 }) {
   const [queue, setQueue] = useState(() => deck.cards.map((c) => c.id))
   const [cursor, setCursor] = useState(() =>
@@ -209,6 +212,10 @@ export default function Study({
       move(dx < 0 ? 1 : -1)
   }
 
+  useEffect(() => {
+    if (complete) companion?.react('complete')
+  }, [complete])
+  const petProps = companion ? { pet: companion.pet, reaction: companion.reaction, onReact: companion.react, onSettings: onPetSettings } : null
   return (
     <main
       id="main"
@@ -524,6 +531,7 @@ export default function Study({
       )}
         </div>
       </div>
+      {petProps && <StudyPet {...petProps} />}
     </main>
   )
 }
