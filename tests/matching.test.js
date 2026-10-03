@@ -34,7 +34,14 @@ test('server persists matching type, inserts at requested position, and validate
   const listen = async () => { server.listen(0, '127.0.0.1'); await once(server, 'listening'); return `http://127.0.0.1:${server.address().port}` }
   let base = await listen()
   let cookie = ''
-  const request = async (path, method = 'GET', body) => fetch(base + path, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: body ? JSON.stringify(body) : undefined })
+  const request = async (path, method = 'GET', body) => {
+    const deckId = /^\/api\/decks\/([^/]+)/.exec(path)?.[1]
+    if (deckId && body) {
+      const decks = (await (await fetch(base + '/api/bootstrap', { headers: { Cookie: cookie } })).json()).decks
+      body = { ...body, baseVersion: decks.find((deck) => deck.id === deckId)?.version }
+    }
+    return fetch(base + path, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: body ? JSON.stringify(body) : undefined })
+  }
   try {
     const registered = await request('/api/register', 'POST', { username: 'matchingowner', password: 'correct-horse-123' })
     cookie = registered.headers.get('set-cookie').split(';')[0]

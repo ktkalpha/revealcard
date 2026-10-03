@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { once } from 'node:events'
 import { createApp } from '../server/app.js'
 
-test('server shares public sets while private sets and writes remain owner-only', async () => {
+test('public sets allow collaborative edits while private sets remain owner-only', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'revealcard-test-'))
   const dataFile = join(dir, 'cards.json')
   let server
@@ -16,11 +16,15 @@ test('server shares public sets while private sets and writes remain owner-only'
     await once(server, 'listening')
     const base = `http://127.0.0.1:${server.address().port}`
     const request = async (path, method = 'GET', body, cookie = '', origin = base) => {
+      const deckId = /^\/api\/decks\/([^/]+)/.exec(path)?.[1]
+      const current = deckId && (await (await fetch(base + '/api/bootstrap', { headers: { Cookie: cookie } })).json()).decks.find((deck) => deck.id === deckId)
+      if (body && current) body = { ...body, baseVersion: current.version }
       const response = await fetch(base + path, {
         method,
         headers: {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(cookie ? { Cookie: cookie } : {}),
+          ...(current && method === 'DELETE' ? { 'If-Match': String(current.version) } : {}),
           ...(method !== 'GET' ? { Origin: origin } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -51,9 +55,10 @@ test('server shares public sets while private sets and writes remain owner-only'
     }, a.cookie)).status, 200)
     const publicView = (await request('/api/bootstrap')).data.decks
     assert.equal(publicView.length, 1)
-    assert.equal(publicView[0].canEdit, false)
+    assert.equal(publicView[0].canEdit, true)
+    assert.equal(publicView[0].canManage, false)
     assert.equal(publicView[0].cards[0].title, '비밀')
-    assert.equal((await request(`/api/decks/${id}/cards/${publicView[0].cards[0].id}`, 'DELETE', null, b.cookie)).status, 404)
+    assert.equal((await request(`/api/decks/${id}/cards/${publicView[0].cards[0].id}`, 'PUT', { title: '비밀', body: '[[정답]]' }, b.cookie)).status, 200)
     assert.equal((await request(`/api/decks/${id}`, 'PATCH', {
       visibility: 'private',
     }, a.cookie)).status, 200)
@@ -116,7 +121,7 @@ test('browser migration is private and can only run once per account', async () 
   }
 })
 
-test('note kind is stored, editable only by its owner, and rejects unknown kinds', async () => {
+test('public notes allow anonymous editing and reject unknown kinds', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'revealcard-note-'))
   const server = await createApp({ dataFile: join(dir, 'cards.json'), distDir: dir })
   try {
@@ -124,6 +129,9 @@ test('note kind is stored, editable only by its owner, and rejects unknown kinds
     await once(server, 'listening')
     const base = `http://127.0.0.1:${server.address().port}`
     const request = async (path, method = 'GET', body, cookie = '') => {
+      const deckId = /^\/api\/decks\/([^/]+)/.exec(path)?.[1]
+      const current = deckId && (await (await fetch(base + '/api/bootstrap', { headers: { Cookie: cookie } })).json()).decks.find((deck) => deck.id === deckId)
+      if (body && current) body = { ...body, baseVersion: current.version }
       const response = await fetch(base + path, {
         method,
         headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
@@ -139,7 +147,7 @@ test('note kind is stored, editable only by its owner, and rejects unknown kinds
     const publicView = (await request('/api/bootstrap')).data.decks[0].cards[0]
     assert.equal(publicView.kind, 'note')
     assert.equal(publicView.body, note.body)
-    assert.equal((await request(`${path}/${publicView.id}`, 'PUT', { ...note, title: '침입' })).status, 401)
+    assert.equal((await request(`${path}/${publicView.id}`, 'PUT', { ...note, title: '익명 수정' })).status, 200)
     assert.equal((await request(`${path}/${publicView.id}`, 'PUT', { ...note, title: '수정' }, owner.cookie)).status, 200)
     assert.equal((await request('/api/bootstrap', 'GET', null, owner.cookie)).data.decks[0].cards[0].kind, 'note')
     assert.equal((await request(path, 'POST', { cards: [{ ...note, kind: 'unknown' }] }, owner.cookie)).status, 400)

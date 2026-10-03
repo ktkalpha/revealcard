@@ -80,13 +80,35 @@ const ownDeck = (data, id, user) => {
   if (!deck || deck.ownerId !== user.id) fail(404, '카드 셋을 찾을 수 없어요.')
   return deck
 }
+const editableDeck = (data, id, user) => {
+  const deck = data.decks.find((item) => item.id === id)
+  if (!deck || (deck.visibility !== 'public' && deck.ownerId !== user?.id))
+    fail(404, '카드 셋을 찾을 수 없어요.')
+  return deck
+}
+const snapshot = (deck, user, action) => ({
+  version: deck.version || 0, name: deck.name, cards: structuredClone(deck.cards),
+  timestamp: new Date().toISOString(), editor: user?.username || '익명', action,
+})
+const beginEdit = (data, deck, user, expected) => {
+  if (!Number.isInteger(expected)) fail(428, '최신 버전을 불러온 뒤 다시 저장해 주세요.')
+  if (expected !== (deck.version || 0)) fail(409, '다른 사용자가 수정했어요. 작성 내용을 보관하고 최신 버전을 확인해 주세요.')
+  data.revisions ||= {}
+  data.revisions[deck.id] ||= [snapshot(deck, null, 'initial')]
+}
+const finishEdit = (data, deck, user, action) => {
+  deck.version = (deck.version || 0) + 1
+  data.revisions[deck.id].push(snapshot(deck, user, action))
+}
 const visibleDecks = (data, user) =>
   data.decks
     .filter((deck) => deck.visibility === 'public' || deck.ownerId === user?.id)
     .map((deck) => ({
       ...deck,
       ownerName: data.users.find((owner) => owner.id === deck.ownerId)?.username,
-      canEdit: deck.ownerId === user?.id,
+      canEdit: deck.visibility === 'public' || deck.ownerId === user?.id,
+      canManage: deck.ownerId === user?.id,
+      version: deck.version || 0,
     }))
 
 async function jsonBody(req) {
@@ -215,7 +237,7 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         send(res, 200, { ok: true }, { 'Set-Cookie': cookie('', 0) })
         return
       }
-      if (!user) fail(401, '로그인이 필요해요.')
+      if (!user && !/^\/api\/decks\/[^/]+(?:\/|$)/.test(path)) fail(401, '로그인이 필요해요.')
       const parts = path.split('/').filter(Boolean)
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await jsonBody(req)
       if (path === '/api/decks' && req.method === 'POST') {
@@ -258,12 +280,29 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
       }
       if (parts[0] === 'api' && parts[1] === 'decks' && parts[2]) {
         const id = parts[2]
-        if (parts.length === 3 && req.method === 'PATCH') {
+        if (parts.length === 4 && parts[3] === 'history' && req.method === 'GET') {
+          const deck = editableDeck(store.read(), id, user)
+          send(res, 200, { revisions: store.read().revisions?.[id] || [snapshot(deck, null, 'initial')] })
+          return
+        } else if (parts.length === 4 && parts[3] === 'restore' && req.method === 'POST') {
           await store.change((data) => {
-            const deck = ownDeck(data, id, user)
+            const deck = editableDeck(data, id, user)
+            beginEdit(data, deck, user, body.baseVersion)
+            const revision = data.revisions[id].find((item) => item.version === body.version)
+            if (!revision) fail(404, '버전을 찾을 수 없어요.')
+            deck.name = revision.name
+            deck.cards = structuredClone(revision.cards)
+            finishEdit(data, deck, user, `restore:${body.version}`)
+          })
+        } else if (parts.length === 3 && req.method === 'PATCH') {
+          await store.change((data) => {
+            const deck = editableDeck(data, id, user)
+            if (body.visibility !== undefined) ownDeck(data, id, user)
+            beginEdit(data, deck, user, body.baseVersion)
             if (body.name !== undefined) deck.name = nameInput(body.name)
             if (body.visibility !== undefined)
               deck.visibility = visibilityInput(body.visibility)
+            finishEdit(data, deck, user, 'settings')
           })
         } else if (parts.length === 3 && req.method === 'DELETE') {
           await store.change((data) => {
@@ -274,21 +313,25 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           if (!Array.isArray(body?.cards) || !body.cards.length)
             fail(400, '추가할 카드가 없어요.')
           await store.change((data) => {
-            const deck = ownDeck(data, id, user)
+            const deck = editableDeck(data, id, user)
+            beginEdit(data, deck, user, body.baseVersion)
             if (deck.cards.length + body.cards.length > 1000)
               fail(400, '카드 셋은 최대 1,000장까지 담을 수 있어요.')
             const index = Number.isInteger(body.index) &&
               body.index >= 0 && body.index <= deck.cards.length
               ? body.index : deck.cards.length
             deck.cards.splice(index, 0, ...body.cards.map(cardInput))
+            finishEdit(data, deck, user, 'add-cards')
           })
         } else if (parts.length === 5 && parts[3] === 'cards' && ['PUT', 'DELETE'].includes(req.method)) {
           await store.change((data) => {
-            const deck = ownDeck(data, id, user)
+            const deck = editableDeck(data, id, user)
+            beginEdit(data, deck, user, req.method === 'DELETE' ? Number(req.headers['if-match']) : body.baseVersion)
             const index = deck.cards.findIndex((card) => card.id === parts[4])
             if (index < 0) fail(404, '카드를 찾을 수 없어요.')
             if (req.method === 'DELETE') deck.cards.splice(index, 1)
             else deck.cards[index] = { ...cardInput(body), id: parts[4] }
+            finishEdit(data, deck, user, req.method === 'DELETE' ? 'delete-card' : 'edit-card')
           })
         } else fail(404, '요청을 찾을 수 없어요.')
         send(res, 200, { ok: true })

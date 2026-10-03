@@ -6,6 +6,7 @@ import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
 import NoteEditor from './components/NoteEditor'
+import HistoryDialog from './components/HistoryDialog'
 import AuthDialog from './components/AuthDialog'
 import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
@@ -147,8 +148,8 @@ function App() {
     } catch {
       setLibrary((prev) => ({ ...prev, ratings: {}, positions: {}, wrongMasks: {} }))
     }
-    setDraft(user ? loadDraft(localStorage, `${DRAFT_KEY}.${user.id}`) : null)
-    setDraftOwner(user?.id || null)
+    setDraft(loadDraft(localStorage, `${DRAFT_KEY}.${user?.id || 'guest'}`))
+    setDraftOwner(user?.id || 'guest')
   }, [user?.id])
   useEffect(() => {
     if (!loaded) return
@@ -165,10 +166,10 @@ function App() {
     }
   }, [library.ratings, library.positions, library.wrongMasks, user?.id, loaded])
   useEffect(() => {
-    if (!user || draftOwner !== user.id) return
+    if (draftOwner !== (user?.id || 'guest')) return
     setAutosaved(false)
     try {
-      const key = `${DRAFT_KEY}.${user.id}`
+      const key = `${DRAFT_KEY}.${user?.id || 'guest'}`
       if (draft) localStorage.setItem(key, JSON.stringify(draft))
       else localStorage.removeItem(key)
       setAutosaved(!!draft)
@@ -211,12 +212,12 @@ function App() {
   }
   const requireOwner = () => {
     if (offline) notify('오프라인에서는 학습만 할 수 있어요. 연결 후 다시 시도해 주세요.')
-    else if (!user) setModal({ type: 'auth' })
+    else if (!user && !deck.canEdit) setModal({ type: 'auth' })
     else if (!deck.canEdit) {
       if (!library.decks.some((item) => item.canEdit)) setModal({ type: 'create' })
       else notify('내 카드 셋을 선택하거나 새 셋을 만들어 주세요.')
     }
-    return !offline && !!user && !!deck.canEdit
+    return !offline && !!deck.canEdit
   }
   const downloadForOffline = async () => {
     try {
@@ -288,6 +289,7 @@ function App() {
     }
     const next = {
       deckId: deck.id,
+      baseVersion: deck.version,
       isNew: !card,
       card: card ? { ...card } : { id: uid(), title: '', body: '', ...(kind === 'note' ? { kind } : {}) },
     }
@@ -322,7 +324,7 @@ function App() {
     const result = await run(
       () => api(
         `/api/decks/${target.id}/cards${existing ? `/${saved.id}` : ''}`,
-        { method: existing ? 'PUT' : 'POST', body: existing ? saved : { cards: [saved] } },
+        { method: existing ? 'PUT' : 'POST', body: existing ? { ...saved, baseVersion: draft.baseVersion } : { cards: [saved], baseVersion: draft.baseVersion } },
       ),
       target.id,
     )
@@ -334,13 +336,13 @@ function App() {
   const deleteCard = async (card) => {
     const targetId = deck.id,
       index = deck.cards.findIndex((c) => c.id === card.id)
-    if (!await run(() => api(`/api/decks/${targetId}/cards/${card.id}`, { method: 'DELETE' }), targetId))
+    if (!await run(() => api(`/api/decks/${targetId}/cards/${card.id}`, { method: 'DELETE', headers: { 'If-Match': String(deck.version) } }), targetId))
       return
     setModal(null)
     notify('카드를 삭제했어요.', async () => {
       await run(
-        () => api(`/api/decks/${targetId}/cards`, {
-          method: 'POST', body: { cards: [card], index },
+        async () => api(`/api/decks/${targetId}/cards`, {
+          method: 'POST', body: { cards: [card], index, baseVersion: (await api('/api/bootstrap')).decks.find((item) => item.id === targetId)?.version },
         }),
         targetId,
       )
@@ -380,7 +382,7 @@ function App() {
   const importSet = async ({ name, cards, mode }) => {
     const result = await run(() => mode === 'new'
       ? api('/api/decks', { method: 'POST', body: { name, visibility: 'private', cards } })
-      : api(`/api/decks/${deck.id}/cards`, { method: 'POST', body: { cards } }),
+      : api(`/api/decks/${deck.id}/cards`, { method: 'POST', body: { cards, baseVersion: deck.version } }),
       mode === 'new' ? undefined : deck.id,
     )
     if (!result) return
@@ -390,7 +392,7 @@ function App() {
   }
   const namedSet = async (name) => {
     const result = await run(() => modal.type === 'rename'
-      ? api(`/api/decks/${deck.id}`, { method: 'PATCH', body: { name } })
+      ? api(`/api/decks/${deck.id}`, { method: 'PATCH', body: { name, baseVersion: deck.version } })
       : api('/api/decks', { method: 'POST', body: { name, visibility: 'private' } }),
       modal.type === 'rename' ? deck.id : undefined,
     )
@@ -400,10 +402,10 @@ function App() {
   }
   const setVisibility = async (visibility) => {
     if (visibility === 'public' &&
-      !window.confirm('이 카드 셋을 같은 서버의 모든 사용자에게 공개할까요?'))
+      !window.confirm('이 카드 셋을 익명 사용자를 포함한 누구나 편집할 수 있도록 공개할까요?'))
       return
     if (await run(() => api(`/api/decks/${deck.id}`, {
-      method: 'PATCH', body: { visibility },
+      method: 'PATCH', body: { visibility, baseVersion: deck.version },
     }), deck.id))
       notify(visibility === 'public' ? '카드 셋을 공개했어요.' : '카드 셋을 비공개로 바꿨어요.')
   }
@@ -514,7 +516,7 @@ function App() {
           </Button>
         </div>
       )}
-      {draft && user && view !== 'edit' && view !== 'note' && (
+      {draft && view !== 'edit' && view !== 'note' && (
         <div className="draft-banner">
           <span>작성 중인 {draft.card.kind === 'note' ? '노트' : '카드'}가 있어요.</span>
           <button
@@ -571,8 +573,9 @@ function App() {
           onDelete={(card) => setModal({ type: 'delete-card', card })}
           onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
           onRenameDeck={() => deck.canEdit && setModal({ type: 'rename' })}
-          onDeleteDeck={() => deck.canEdit && setModal({ type: 'delete-deck' })}
+          onDeleteDeck={() => deck.canManage && setModal({ type: 'delete-deck' })}
           onVisibility={setVisibility}
+          onHistory={() => setModal({ type: 'history' })}
           onMigrate={() => setModal({ type: 'migrate' })}
           showMigration={!offline && !!user && !user.migrated && hasLegacy}
           onExport={() => setModal({ type: 'export' })}
@@ -628,6 +631,10 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
+      {modal?.type === 'history' && <HistoryDialog deck={deck} offline={offline} onClose={() => setModal(null)} onRestore={async (version, baseVersion) => {
+        const result = await run(() => api(`/api/decks/${deck.id}/restore`, { method: 'POST', body: { version, baseVersion } }), deck.id)
+        if (result) { setModal(null); notify('이전 버전을 복원했어요.') }
+      }} />}
       {modal?.type === 'export' && (
         <ExportDialog
           deck={deck}

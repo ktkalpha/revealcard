@@ -2534,3 +2534,7 @@ footer span:first-child {
   .matching-tile { min-height: 100px; padding: 9px; font-size: 13px; }
   .matching-tile.selected { padding: 8px; }
 }
+
+.history-preview { max-height: 40vh; overflow: auto; margin-top: 20px; }
+.history-preview details { padding: 10px 0; border-bottom: 1px solid #ddd; }
+.history-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }

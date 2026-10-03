@@ -35,6 +35,7 @@ export default function Library({
   onRenameDeck,
   onDeleteDeck,
   onVisibility,
+  onHistory,
   onMigrate,
   showMigration,
   onExport,
@@ -168,7 +169,7 @@ export default function Library({
                 {deck.cards.length}장 <span>·</span> 기억한 카드 {known}장
                 {deck.ownerName && <><span>·</span> {deck.ownerName}</>}
               </p>
-              {deck.canEdit && (
+              {deck.canManage && (
                 <div className="segmented visibility-control" role="group" aria-label="카드 셋 공개 설정">
                   <button aria-pressed={deck.visibility === 'private'} onClick={() => onVisibility('private')}>
                     <LockKeyhole size={14} /> 비공개
@@ -184,6 +185,7 @@ export default function Library({
             </Button>
           </div>
           <div className="collection-tools">
+            <Button variant="outline" size="sm" onClick={onHistory} disabled={offline || !deck.id}>버전 기록 · v{deck.version || 0}</Button>
             <div className="search-input">
               <Search size={17} />
               <input
@@ -274,7 +276,7 @@ export default function Library({
                 filter === 'all' && (
                   !offline && (deck.canEdit || !decks.length) && (
                     <Button onClick={onNote}>
-                      <BookOpen size={16} /> {user ? '노트 추가' : '로그인'}
+                      <BookOpen size={16} /> {deck.canEdit ? '노트 추가' : '로그인'}
                     </Button>
                   )
                 )
@@ -343,10 +345,10 @@ export default function Library({
                   ? '새 카드 셋을 만들거나 공개 셋을 기다려 주세요.'
                   : '공개된 카드 셋을 기다려 주세요.'
                 : deck.visibility === 'public'
-                  ? '이 서버의 누구나 이 카드 셋을 학습할 수 있어요.'
+                  ? '익명 사용자도 편집할 수 있어요. 모든 수정은 버전 기록에 저장돼요.'
                   : '비공개 셋은 소유자만 볼 수 있어요.'}
             </span>
-            {deck.canEdit && (
+            {deck.canManage && (
               <Button
                 variant="ghost"
                 size="sm"
