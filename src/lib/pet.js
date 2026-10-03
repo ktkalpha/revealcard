@@ -1,10 +1,14 @@
 export const PET_STATES = ['idle', 'happy', 'thinking', 'celebrate']
-export const newPet = () => ({ enabled: false, name: '나의 펫', image: '', sheet: '', size: 112, side: 'right' })
+export const newPet = () => ({ enabled: false, name: '나의 펫', image: '', sheet: '', size: 112, side: 'right', position: null })
 export const petName = (value) => typeof value === 'string' ? [...value.trim()].slice(0, 16).join('') || '나의 펫' : '나의 펫'
 export const validPetImage = (value) => typeof value === 'string' && value.length <= 12 * 1024 * 1024 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)
+export function normalizePetPosition(value) {
+  return value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
+    ? {x:Math.min(1,Math.max(0,value.x)),y:Math.min(1,Math.max(0,value.y))} : null
+}
 export function normalizePet(value) {
   if (!value || typeof value !== 'object') return newPet()
-  return { enabled: value.enabled === true, name: petName(value.name), image: validPetImage(value.image) ? value.image : '', sheet: validPetImage(value.sheet) ? value.sheet : '', size: [80,112,144].includes(value.size) ? value.size : 112, side: value.side === 'left' ? 'left' : 'right' }
+  return { enabled: value.enabled === true, name: petName(value.name), image: validPetImage(value.image) ? value.image : '', sheet: validPetImage(value.sheet) ? value.sheet : '', size: [80,112,144].includes(value.size) ? value.size : 112, side: value.side === 'left' ? 'left' : 'right', position:normalizePetPosition(value.position) }
 }
 export function petExpression(reaction) {
   return { known: 'happy', again: 'thinking', complete: 'celebrate', pat: 'happy' }[reaction] || 'idle'

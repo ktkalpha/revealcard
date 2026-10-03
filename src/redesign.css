@@ -248,3 +248,13 @@ footer > span:first-child { color: var(--ink); font-size: 12px; font-weight: 700
  .pet-expression-previews > button > span { width: 48px; height: 48px; }
 }
 @media(prefers-reduced-motion:reduce) { .custom-pet-touch { animation: none !important; transition: none; } }
+.custom-pet-touch { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.custom-pet-touch:active,.pet-dragging .custom-pet-touch { cursor: grabbing; }
+.custom-pet-motion { display: block; width: 100%; height: 100%; }
+.floating-study-pet .pet-speech { max-width: 100%; height: 60px; padding: 4px 6px; box-sizing: border-box; display: grid; place-items: center; white-space: normal; }
+.pet-state-happy .custom-pet-touch,.pet-state-celebrate .custom-pet-touch,.pet-state-thinking .custom-pet-touch { animation: none; }
+.pet-state-happy .custom-pet-motion,.pet-state-celebrate .custom-pet-motion { animation: custom-pet-hop .55s ease-in-out 2; }
+.pet-state-thinking .custom-pet-motion { animation: custom-pet-tilt .8s ease-in-out 2; }
+.pet-dragging .custom-pet-touch { transform: none; }
+.pet-dragging .custom-pet-motion { animation: none; }
+@media(prefers-reduced-motion:reduce) { .custom-pet-motion { animation: none !important; } }

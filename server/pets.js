@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename, open, unlink, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { normalizePet, validPetImage } from '../src/lib/pet.js'
+import { normalizePet, normalizePetPosition, validPetImage } from '../src/lib/pet.js'
 const uuid = /^[0-9a-f-]{36}$/
 const error = (status,message) => Object.assign(new Error(message),{status})
 const delay = ms => new Promise(r=>setTimeout(r,ms))
@@ -39,11 +39,11 @@ export function createPets(directory) {
   function view(data,owner) {
     const pet=data.pets[owner]||{...normalizePet(),reference:null,jobId:null}
     const job=data.jobs[pet.jobId]
-    return {pet:{enabled:pet.enabled,name:pet.name,size:pet.size,side:pet.side,image:pet.reference?`/api/pet/assets/${pet.reference}`:'',sheet:job?.status==='done'?`/api/pet/assets/${job.output}`:''},job:job?{id:job.id,status:job.status,error:job.error||null}:null,workerOnline:Date.now()-data.workerSeen<45000}
+    return {pet:{enabled:pet.enabled,name:pet.name,size:pet.size,side:pet.side,position:normalizePetPosition(pet.position),image:pet.reference?`/api/pet/assets/${pet.reference}`:'',sheet:job?.status==='done'?`/api/pet/assets/${job.output}`:''},job:job?{id:job.id,status:job.status,error:job.error||null}:null,workerOnline:Date.now()-data.workerSeen<45000}
   }
   return {
     async get(owner){return view(await read(),owner)},
-    async settings(owner,input){return change(data=>{const prev=data.pets[owner]||{...normalizePet(),reference:null,jobId:null};const settings=normalizePet(input);data.pets[owner]={...prev,enabled:settings.enabled,name:settings.name,size:settings.size,side:settings.side};return view(data,owner)})},
+    async settings(owner,input){return change(data=>{const prev=data.pets[owner]||{...normalizePet(),reference:null,jobId:null};const settings=normalizePet({...prev,...input});data.pets[owner]={...prev,enabled:settings.enabled,name:settings.name,size:settings.size,side:settings.side,position:settings.position};return view(data,owner)})},
     async reference(owner,image){const name=await writeImage(image);return change(data=>{data.pets[owner]={...(data.pets[owner]||normalizePet()),reference:name,jobId:null,enabled:true};return view(data,owner)})},
     async generate(owner){return change(data=>{
       const pet=data.pets[owner]

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { newPet, normalizePet, validPetImage, petExpression, PET_SHEET_PROMPT } from '../src/lib/pet.js'
 
 test('custom pet requires an image and defaults to disabled',()=> {
-  assert.deepEqual(newPet(),{enabled:false,name:'나의 펫',image:'',sheet:'',size:112,side:'right'})
+  assert.deepEqual(newPet(),{enabled:false,name:'나의 펫',image:'',sheet:'',size:112,side:'right',position:null})
 })
 test('saved custom pets reject executable URLs and invalid settings',()=> {
   const valid='data:image/png;base64,aGVsbG8='

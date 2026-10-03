@@ -46,6 +46,14 @@ test('pet API requires login and keeps images and jobs isolated by account',asyn
     assert.equal(settings.pet.name,'내 펫');assert.equal(settings.pet.image,ref.pet.image);assert.equal(settings.pet.sheet,done.pet.sheet)
     const persisted=await createPets(join(dir,'pets')).get(Object.keys(JSON.parse(await readFile(join(dir,'pets/state.json'),'utf8')).pets)[0])
     assert.equal(persisted.pet.enabled,false)
+    const moved=await (await request('/api/pet','PUT',{position:{x:.25,y:.6}},a)).json()
+    assert.deepEqual(moved.pet.position,{x:.25,y:.6})
+    assert.equal(moved.pet.name,'내 펫')
+    const unchanged=await (await request('/api/pet','PUT',{size:112},a)).json()
+    assert.deepEqual(unchanged.pet.position,{x:.25,y:.6})
+    assert.equal((await (await request('/api/pet','GET',undefined,b)).json()).pet.position,null)
+    const reset=await (await request('/api/pet','PUT',{side:'right',position:null},a)).json()
+    assert.equal(reset.pet.position,null)
   }finally{await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true})}
 })
 

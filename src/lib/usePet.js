@@ -48,8 +48,8 @@ export default function usePet(owner) {
     const next=action(current.current.pet)
     current.current={...current.current,pet:next}
     setSnapshot({owner,...current.current})
-    const {enabled,name,size,side}=next
-    mutate(()=>api('/api/pet',{method:'PUT',body:{enabled,name,size,side}})).catch(()=>{})
+    const {enabled,name,size,side,position}=next
+    mutate(()=>api('/api/pet',{method:'PUT',body:{enabled,name,size,side,position}})).catch(()=>{})
   }
   const upload=image=> {
     const epoch=generation.current

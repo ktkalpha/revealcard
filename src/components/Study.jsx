@@ -215,7 +215,7 @@ export default function Study({
   useEffect(() => {
     if (complete) companion?.react('complete')
   }, [complete])
-  const petProps = companion ? { pet: companion.pet, reaction: companion.reaction, onReact: companion.react, onSettings: onPetSettings } : null
+  const petProps = companion ? { pet: companion.pet, reaction: companion.reaction, onReact: companion.react, onSettings: onPetSettings, onMove: position => companion.update(prev => ({...prev,position})) } : null
   return (
     <main
       id="main"
