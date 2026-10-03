@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Check, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
+import { BookOpen, Check, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
@@ -23,6 +23,7 @@ import {
   uid,
 } from './lib/storage'
 import './style.css'
+import './redesign.css'
 import { registerSW } from 'virtual:pwa-register'
 
 registerSW({
@@ -464,14 +465,14 @@ function App() {
             aria-current={view === 'study' ? 'page' : undefined}
             onClick={() => setView('study')}
           >
-            학습하기
+            <BookOpen size={16} /> 학습하기
           </button>
           <button
             className={`nav-link ${view === 'library' ? 'active' : ''}`}
             aria-current={view === 'library' ? 'page' : undefined}
             onClick={() => setView('library')}
           >
-            내 카드
+            <Layers3 size={16} /> 카드 라이브러리
           </button>
         </nav>
         <div className="header-actions">

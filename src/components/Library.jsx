@@ -11,6 +11,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Layers3,
   LockKeyhole,
   Globe2,
   Trash2,
@@ -78,10 +79,10 @@ export default function Library({
     <main id="main" className="library-page">
       <div className="section-heading">
         <div>
-          <p className="overline">YOUR COLLECTION</p>
-          <h1>{user ? '내 카드' : '공개 카드'}</h1>
+          <p className="workspace-eyebrow"><Layers3 size={14} /> YOUR COLLECTION</p>
+          <h1>{user ? '나의 기억 저장소.' : '함께 만드는 기억.'}</h1>
           <p className="muted">
-            {user ? `${user.username}의 카드와 서버의 공개 카드 셋` : '서버에 공개된 카드 셋'}
+            {user ? `${user.username}의 카드부터 함께 나누는 지식까지, 한곳에.` : '좋은 지식은 함께 나눌 때 더 오래 남아요.'}
           </p>
         </div>
         <div className="library-actions">
@@ -95,6 +96,11 @@ export default function Library({
             <BookOpen size={17} /> 노트 추가
           </Button>
         </div>
+      </div>
+      <div className="library-summary" aria-label="카드 라이브러리 현황">
+        <div><span className="summary-icon"><Layers3 size={19} /></span><span><strong>{decks.length}</strong><small>카드 셋</small></span></div>
+        <div><span className="summary-icon"><BookOpen size={19} /></span><span><strong>{decks.reduce((sum, item) => sum + item.cards.length, 0)}</strong><small>학습 카드</small></span></div>
+        <div><span className="summary-icon"><Globe2 size={19} /></span><span><strong>{publicDecks.length}</strong><small>함께 쓰는 공개 셋</small></span></div>
       </div>
       <div className="library-layout">
         <aside className="deck-sidebar">
@@ -152,6 +158,7 @@ export default function Library({
         <section className="collection-panel">
           <div className="collection-heading">
             <div>
+              <p className="collection-kicker">{deck.visibility === 'public' ? <Globe2 size={12} /> : <LockKeyhole size={12} />}{deck.visibility === 'public' ? '함께 쓰는 카드 셋' : '나만의 카드 셋'}</p>
               <h2>
                 {deck.name}
                 {deck.canEdit && (

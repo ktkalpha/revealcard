@@ -13,6 +13,8 @@ import {
   Plus,
   RotateCcw,
   Shuffle,
+  Sparkles,
+  Target,
   Layers3,
 } from 'lucide-react'
 import { Button } from './ui/button'
@@ -75,6 +77,8 @@ export default function Study({
   const doneCount = Object.keys(results).length
   const againIds = queue.filter((id) => results[id] === 'again')
   const unmarkedIds = queue.filter((id) => !results[id])
+  const rememberedCount = deck.cards.filter((item) => ratings[item.id] === 'known').length
+  const rememberedPercent = deck.cards.length ? Math.round(rememberedCount / deck.cards.length * 100) : 0
   const knownCount = Object.values(results).filter((v) => v === 'known').length
 
   useEffect(() => {
@@ -210,6 +214,20 @@ export default function Study({
       id="main"
       className={`study-page${card?.kind === 'note' ? ' note-study-page' : ''}`}
     >
+      <div className="study-layout">
+        <aside className="study-overview" aria-label="학습 현황">
+          <p className="workspace-eyebrow"><Sparkles size={14} /> YOUR DAILY PRACTICE</p>
+          <h2>작은 반복이,<br /><span>큰 기억으로.</span></h2>
+          <p className="overview-description">가리고, 떠올리고, 기억하기.<br />오늘도 한 장씩 채워보세요.</p>
+          <div className="overview-art" aria-hidden="true"><div className="art-card art-back" /><div className="art-card art-middle" /><div className="art-card art-front"><Layers3 size={25} /><span>reveal.</span><i /><i /></div><span className="art-spark">✦</span></div>
+          <div className="memory-summary">
+            <div className="memory-summary-label"><Target size={16} /><span>나의 기억 현황</span><strong>{rememberedPercent}%</strong></div>
+            <div className="memory-meter"><span style={{ width: `${rememberedPercent}%` }} /></div>
+            <div className="memory-metrics"><div><strong>{rememberedCount}<small> / {deck.cards.length}</small></strong><span>기억한 카드</span></div><div><strong>{reviewIds.length}</strong><span>다시 볼 카드</span></div></div>
+          </div>
+          <div className="overview-tip"><span>작은 학습 팁</span><p>정답을 보기 전 잠깐 멈춰보세요.<br />떠올리는 순간, 기억이 깊어져요.</p></div>
+        </aside>
+        <div className="study-workspace">
       <div className="study-toolbar">
         <div className="deck-select">
           <BookOpen size={17} />
@@ -504,6 +522,8 @@ export default function Study({
           )}
         </>
       )}
+        </div>
+      </div>
     </main>
   )
 }
