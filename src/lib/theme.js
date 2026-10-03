@@ -14,7 +14,15 @@ export function loadTheme() {
   try {
     const value = JSON.parse(localStorage.getItem(THEME_KEY))
     if (value && Object.keys(DEFAULT_THEME).every((key) => validColor(value[key])))
-      return { ...Object.fromEntries(Object.keys(DEFAULT_THEME).map((key) => [key, value[key]])), ...(validColor(value.seed) ? { seed: value.seed, mode: value.mode === 'dark' ? 'dark' : 'light' } : {}) }
+      {
+      const theme = { ...Object.fromEntries(Object.keys(DEFAULT_THEME).map((key) => [key, value[key]])), ...(validColor(value.seed) ? { seed: value.seed, mode: value.mode === 'dark' ? 'dark' : 'light' } : {}) }
+      // Upgrade the old muted primary while preserving manually adjusted colors.
+      if (theme.seed) {
+        const previous = new SchemeTonalSpot(Hct.fromInt(argbFromHex(theme.seed)), theme.mode === 'dark', 0)
+        if (theme.accent.toLowerCase() === hexFromArgb(previous.primary)) theme.accent = theme.seed
+      }
+      return theme
+    }
   } catch {}
   return { ...DEFAULT_THEME }
 }
@@ -26,7 +34,7 @@ export function themeFromSeed(seed, mode = 'light') {
     background: hexFromArgb(scheme.background),
     surface: hexFromArgb(scheme.surfaceContainerLowest),
     text: hexFromArgb(scheme.onSurface),
-    accent: hexFromArgb(scheme.primary),
+    accent: seed,
   }
 }
 const rgb = (hex) => hex.match(/[0-9a-f]{2}/gi).map((value) => parseInt(value, 16))
@@ -196,6 +204,11 @@ export function applyTheme(theme) {
   style.setProperty('--paper', theme.surface)
   style.setProperty('--ink', theme.text)
   style.setProperty('--accent', theme.accent)
+  // Keep colored labels readable even when the chosen color is neon or pale.
+  let accentInk = theme.accent
+  for (let amount = 0; contrast(accentInk, theme.surface) < 4.5 && amount <= 1; amount += 0.05)
+    accentInk = mix(theme.accent, theme.text, amount)
+  style.setProperty('--accent-ink', accentInk)
   style.setProperty('--on-accent', contrast(theme.accent, '#ffffff') >= contrast(theme.accent, '#171717') ? '#ffffff' : '#171717')
   for (const [key, amount] of [['muted', 0.65], ['line', 0.18], ['soft', 0.07]]) {
     if (isDefault) style.removeProperty(`--${key}`)
