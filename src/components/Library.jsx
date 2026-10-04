@@ -30,6 +30,7 @@ export default function Library({
   onStudy,
   onAdd,
   onNote,
+  onPassage,
   onEdit,
   onDelete,
   onCreateDeck,
@@ -92,6 +93,7 @@ export default function Library({
           <Button variant="outline" onClick={onAdd} disabled={offline || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
             <Plus size={17} /> 한 장 만들기
           </Button>
+          <Button variant="outline" onClick={onPassage} disabled={offline || deck.cards.length >= 1000}><BookOpen size={17}/> 본문 추가</Button>
           <Button onClick={onNote} disabled={offline || deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
             <BookOpen size={17} /> 노트 추가
           </Button>
@@ -282,8 +284,8 @@ export default function Library({
               ) : (
                 filter === 'all' && (
                   !offline && (deck.canEdit || !decks.length) && (
-                    <Button onClick={onNote}>
-                      <BookOpen size={16} /> {deck.canEdit ? '노트 추가' : '로그인'}
+                    <Button onClick={onPassage}>
+                      <BookOpen size={16} /> {deck.canEdit ? '본문 추가' : '로그인'}
                     </Button>
                   )
                 )
@@ -306,6 +308,7 @@ export default function Library({
                         {markdownExcerpt(card.body)}
                       </span>
                       <span className="card-meta">
+                        {card.kind === 'passage' && <span className="note-kind"><BookOpen size={12}/> 본문 · 하이라이트 {card.highlights?.length || 0}개</span>}
                         {card.kind === 'note' && <span className="note-kind"><BookOpen size={12} /> 노트</span>}
                         {card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
                         {ratings[card.id] && (

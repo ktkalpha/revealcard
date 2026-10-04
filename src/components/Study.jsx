@@ -20,6 +20,7 @@ import {
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import NoteStudy from './NoteStudy'
+import PassageText from './PassageText'
 import MatchingGame from './MatchingGame'
 import StudyPet from './StudyPet'
 import { masksIn, wrongMaskIds } from '../lib/masks'
@@ -39,6 +40,7 @@ export default function Study({
   onAdd,
   onImport,
   modalOpen,
+  onHighlight,
   companion,
   onPetSettings,
 }) {
@@ -219,7 +221,7 @@ export default function Study({
   return (
     <main
       id="main"
-      className={`study-page${card?.kind === 'note' ? ' note-study-page' : ''}`}
+      className={`study-page${['note','passage'].includes(card?.kind) ? ' note-study-page' : ''}`}
     >
       <div className="study-layout">
         <aside className="study-overview" aria-label="학습 현황">
@@ -386,17 +388,17 @@ export default function Study({
                   />
                 </div>
                 <article
-                  className={card.kind === 'note' ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
+                  className={['note','passage'].includes(card.kind) ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
                   style={{
-                    transform: card.kind !== 'note' && drag
+                    transform: !['note','passage'].includes(card.kind) && drag
                       ? `translateX(${drag}px) rotate(${drag / 35}deg)`
                       : undefined,
                   }}
                   data-no-swipe={card.kind === 'matching' ? true : undefined}
-                  onPointerDown={card.kind === 'note' ? undefined : pointerDown}
-                  onPointerMove={card.kind === 'note' ? undefined : pointerMove}
-                  onPointerUp={card.kind === 'note' ? undefined : pointerEnd}
-                  onPointerCancel={card.kind === 'note' ? undefined : () => {
+                  onPointerDown={['note','passage'].includes(card.kind) ? undefined : pointerDown}
+                  onPointerMove={['note','passage'].includes(card.kind) ? undefined : pointerMove}
+                  onPointerUp={['note','passage'].includes(card.kind) ? undefined : pointerEnd}
+                  onPointerCancel={['note','passage'].includes(card.kind) ? undefined : () => {
                     pointer.current = null
                     setDrag(0)
                   }}
@@ -410,7 +412,7 @@ export default function Study({
                 >
                   <div className="sheet-top">
                     <span className="overline">
-                      {card.kind === 'matching' ? 'SPECIAL GAME' : card.kind === 'note' ? 'NOTE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
+                      {card.kind === 'matching' ? 'SPECIAL GAME' : ['note','passage'].includes(card.kind) ? (card.kind === 'passage' ? 'PASSAGE' : 'NOTE') : 'CARD'} {String(cursor + 1).padStart(2, '0')}
                     </span>
                     {onEdit && (
                       <Button
@@ -424,11 +426,11 @@ export default function Study({
                       </Button>
                     )}
                   </div>
-                  <div className={card.kind === 'note' ? 'note-study-content' : 'sheet-content'} key={card.id}>
-                    <h1 style={card.kind === 'note' ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
-                    {card.kind === 'matching' ? (
+                  <div className={['note','passage'].includes(card.kind) ? 'note-study-content' : 'sheet-content'} key={card.id}>
+                    <h1 style={['note','passage'].includes(card.kind) ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
+                    {card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
-                    ) : card.kind === 'note' ? (
+                    ) : ['note','passage'].includes(card.kind) ? (
                       <NoteStudy
                         body={card.body}
                         revealed={revealed}
@@ -511,7 +513,7 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    {!['note', 'matching'].includes(card.kind) && <span className="swipe-tip">좌우로 밀어 카드 이동</span>}
+                    {!['note', 'matching'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />

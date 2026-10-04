@@ -4,6 +4,7 @@ import { dirname, extname, resolve, sep } from 'node:path'
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { matchingError } from '../src/lib/matching.js'
+import { passageError, passageData } from '../src/lib/passage.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
 import { createPets } from './pets.js'
@@ -21,6 +22,8 @@ const pruneSessions = data => {
     if (!liveSession(session)) delete data.sessions[key]
 }
 const contentTypes = {
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -60,18 +63,20 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
-    (card.kind !== undefined && !['note', 'matching'].includes(card.kind)) ||
+    (card.kind !== undefined && !['note', 'matching', 'passage'].includes(card.kind)) ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
-    (card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body))
+    (card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
+    (card.kind === 'passage' && passageError(card))
   )
     fail(400, '카드 제목, 내용 또는 빈칸 표시를 확인해 주세요.')
   return {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
-    ...(['note', 'matching'].includes(card.kind) ? { kind: card.kind } : {}),
+    ...(['note', 'matching', 'passage'].includes(card.kind) ? { kind: card.kind } : {}),
     ...(card.align ? { align: card.align } : {}),
+    ...(card.kind === 'passage' ? passageData(card) : {}),
   }
 }
 const nameInput = (name) => {

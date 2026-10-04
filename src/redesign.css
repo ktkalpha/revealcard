@@ -262,3 +262,31 @@ footer > span:first-child { color: var(--ink); font-size: 12px; font-weight: 700
 .auth-remember { display: flex; align-items: center; gap: 9px; margin-top: 18px; font-size: 13px; cursor: pointer; }
 .auth-remember input[type='checkbox'] { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--accent); flex-shrink: 0; }
 .auth-remember small { color: var(--muted); font-size: 11px; margin-left: 4px; }
+
+@font-face { font-family: 'KoPubWorld Dotum'; src: url('/fonts/KoPubWorldDotum-Light.woff2') format('woff2'); font-weight: 100 300; font-display: swap; }
+@font-face { font-family: 'KoPubWorld Dotum'; src: url('/fonts/KoPubWorldDotum-Medium.woff2') format('woff2'); font-weight: 400 500; font-display: swap; }
+@font-face { font-family: 'KoPubWorld Dotum'; src: url('/fonts/KoPubWorldDotum-Bold.woff2') format('woff2'); font-weight: 600 900; font-display: swap; }
+body, body *, input, textarea, button, select, code, pre { font-family: 'KoPubWorld Dotum', sans-serif !important; }
+.passage-editor { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+.passage-field { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; }
+.passage-field input, .passage-field textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font-size: 16px; font-weight: 400; }
+.passage-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0; }
+.passage-editor-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.passage-editor-columns textarea { min-height: 480px; resize: vertical; line-height: 1.9; }
+.passage-preview { padding: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
+.passage-preview h2, .passage-highlight-list h2 { font-size: 17px; margin: 0 0 18px; }
+.passage-text { font-size: 18px; line-height: 2; white-space: pre-wrap; overflow-wrap: anywhere; }
+.passage-text .study-text, .passage-text .study-text p { display: inline; margin: 0; font-size: inherit; line-height: inherit; }
+.passage-highlight { background: #fff0a8; color: #292719; border-radius: 3px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; }
+.passage-highlight:hover { background: #ffe379; }
+.passage-card-link { border: 0; border-radius: 4px; background: #efd469; color: #463a12; font-size: 11px; padding: 3px 5px; margin-left: 5px; cursor: pointer; white-space: nowrap; }
+.passage-highlight-list { margin-top: 28px; }
+.passage-highlight-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.passage-highlight-list > div > button:first-child { background: none; border: none; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.passage-selected { padding: 12px 16px; background: #fff0a8; color: #292719; border-radius: 6px; white-space: pre-wrap; }
+.passage-linked-editor { padding: 16px 0; border-bottom: 1px solid var(--line); display: grid; gap: 12px; }
+.passage-linked-editor textarea { min-height: 160px; resize: vertical; line-height: 1.8; }
+.passage-popup-card { padding: 20px 12px 32px; text-align: center; }
+.passage-popup-card h2 { font-size: 24px; }
+.passage-popup-card .study-text { margin: 24px 0; }
+@media (max-width: 760px) { .passage-editor { padding: 24px 16px 60px; } .passage-editor-columns { grid-template-columns: 1fr; } .passage-text { font-size: 17px; } }

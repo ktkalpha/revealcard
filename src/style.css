@@ -1,11 +1,5 @@
 :root {
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    'Noto Sans KR',
-    sans-serif;
+  font-family: 'KoPubWorld Dotum', sans-serif;
   color: var(--tone-242521, #242521);
   background: var(--page, #f7f7f3);
   font-synthesis: none;
