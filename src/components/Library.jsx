@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { masksIn, plainText } from '../lib/masks'
+import { classificationData } from '../lib/classification'
 import { markdownExcerpt } from '../lib/markdown'
 
 export default function Library({
@@ -305,12 +306,12 @@ export default function Library({
                     <span className="card-row-content">
                       <strong>{card.title}</strong>
                       <span className="card-excerpt">
-                        {markdownExcerpt(card.body)}
+                        {card.kind === 'classification' ? (()=>{try{return `화석 사진 ${classificationData(card.body).items.length}개 · 무작위 시대 분류`}catch{return '사진 분류 게임'}})() : markdownExcerpt(card.body)}
                       </span>
                       <span className="card-meta">
                         {card.kind === 'passage' && <span className="note-kind"><BookOpen size={12}/> 본문 · 하이라이트 {card.highlights?.length || 0}개</span>}
                         {card.kind === 'note' && <span className="note-kind"><BookOpen size={12} /> 노트</span>}
-                        {card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
+                        {card.kind === 'classification' ? <span className="note-kind">사진 분류 게임</span> : card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
                         {ratings[card.id] && (
                           <span className={`status-label ${ratings[card.id]}`}>
                             {ratings[card.id] === 'known' ? (

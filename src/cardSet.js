@@ -1,3 +1,4 @@
+import { classificationError } from './lib/classification.js'
 import { matchingError } from './lib/matching.js'
 import { passageError, passageData } from './lib/passage.js'
 import { bodyError } from './lib/masks.js'
@@ -13,7 +14,7 @@ export function exportCardSet(cards, name = '나의 암기 카드') {
     cards: cards.map(card => ({
       title: card.title,
       body: card.body,
-      ...(['note', 'matching', 'passage'].includes(card.kind) ? {kind: card.kind} : {}),
+      ...(['note', 'matching', 'passage', 'classification'].includes(card.kind) ? {kind: card.kind} : {}),
       ...(card.align && card.align !== 'center' ? {align: card.align} : {}),
       ...(card.kind === 'passage' ? passageData(card) : {}),
     })),
@@ -55,16 +56,16 @@ export function parseCardSet(text) {
       throw new Error(`${index + 1}번 카드가 너무 깁니다.`)
     if (card.align !== undefined && !['left', 'center', 'right'].includes(card.align))
       throw new Error(`${index + 1}번 카드의 정렬 값이 올바르지 않습니다.`)
-    if (card.kind !== undefined && !['note', 'matching', 'passage'].includes(card.kind))
+    if (card.kind !== undefined && !['note', 'matching', 'passage', 'classification'].includes(card.kind))
       throw new Error(`${index + 1}번 카드의 유형이 올바르지 않습니다.`)
-    const error = card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)
+    const error = card.kind === 'classification' ? classificationError(card.body) : card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)
     if (card.kind === 'passage' && passageError(card)) throw new Error(`${index + 1}번 본문: ${passageError(card)}`)
     if (error) throw new Error(`${index + 1}번 카드: ${error}`)
     return {
       ...(card.kind === 'passage' ? passageData(card) : {}),
       title: card.title,
       body: card.body,
-      ...(['note', 'matching', 'passage'].includes(card.kind) ? { kind: card.kind } : {}),
+      ...(['note', 'matching', 'passage', 'classification'].includes(card.kind) ? { kind: card.kind } : {}),
       ...(card.align && card.align !== 'center' ? { align: card.align } : {}),
     }
   })

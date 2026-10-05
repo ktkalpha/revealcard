@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
+import { classificationError } from '../src/lib/classification.js'
 import { matchingError } from '../src/lib/matching.js'
 import { passageError, passageData } from '../src/lib/passage.js'
 import { bodyError } from '../src/lib/masks.js'
@@ -30,6 +31,7 @@ const contentTypes = {
   '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
 }
@@ -63,10 +65,10 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
-    (card.kind !== undefined && !['note', 'matching', 'passage'].includes(card.kind)) ||
+    (card.kind !== undefined && !['note', 'matching', 'passage', 'classification'].includes(card.kind)) ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
-    (card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
+    (card.kind === 'classification' ? classificationError(card.body) : card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
     (card.kind === 'passage' && passageError(card))
   )
     fail(400, '카드 제목, 내용 또는 빈칸 표시를 확인해 주세요.')
@@ -74,7 +76,7 @@ const cardInput = (card) => {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
-    ...(['note', 'matching', 'passage'].includes(card.kind) ? { kind: card.kind } : {}),
+    ...(['note', 'matching', 'passage', 'classification'].includes(card.kind) ? { kind: card.kind } : {}),
     ...(card.align ? { align: card.align } : {}),
     ...(card.kind === 'passage' ? passageData(card) : {}),
   }

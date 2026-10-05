@@ -19,6 +19,7 @@ import {
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import MatchingEditor from './MatchingEditor'
+import ClassificationEditor from './ClassificationEditor'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
 
 export default function Editor({
@@ -98,6 +99,7 @@ export default function Editor({
     e.preventDefault()
     if (canSave) onSave()
   }
+  if (card.kind === 'classification') return <ClassificationEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
   if (card.kind === 'matching') return <MatchingEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
   return (
     <main id="main" className="editor-page">

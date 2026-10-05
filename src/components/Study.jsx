@@ -22,6 +22,7 @@ import MaskedText from './MaskedText'
 import NoteStudy from './NoteStudy'
 import PassageText from './PassageText'
 import MatchingGame from './MatchingGame'
+import ClassificationGame from './ClassificationGame'
 import StudyPet from './StudyPet'
 import { masksIn, wrongMaskIds } from '../lib/masks'
 
@@ -62,6 +63,7 @@ export default function Study({
   const pointer = useRef(null)
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
+  const isGame = ['matching','classification'].includes(card?.kind)
   const cardMasks = masksIn(card?.body || '')
   const focusIds = reviewMode === 'masks'
     ? new Set(focusByCard[card?.id] || [])
@@ -69,7 +71,7 @@ export default function Study({
   const maskIds = cardMasks
     .filter((mask) => !focusIds || focusIds.has(mask.id))
     .map((mask) => mask.id)
-  const allVisible = card?.kind === 'matching' ? matchingDone : maskIds.every((id) => revealed.has(id))
+  const allVisible = isGame ? matchingDone : maskIds.every((id) => revealed.has(id))
   const reviewIds = deck.cards
     .filter((c) => ratings[c.id] === 'again')
     .map((c) => c.id)
@@ -156,7 +158,7 @@ export default function Study({
         e.preventDefault()
         move(1)
       }
-      if (!complete && card && card.kind !== 'matching') {
+      if (!complete && card && !isGame) {
         if (e.code === 'Space' && !e.target.closest('button')) {
           e.preventDefault()
           allVisible ? rate('known') : revealNext()
@@ -221,7 +223,7 @@ export default function Study({
   return (
     <main
       id="main"
-      className={`study-page${['note','passage'].includes(card?.kind) ? ' note-study-page' : ''}`}
+      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${['note','passage','classification'].includes(card?.kind) ? ' note-study-page' : ''}`}
     >
       <div className="study-layout">
         <aside className="study-overview" aria-label="학습 현황">
@@ -388,17 +390,17 @@ export default function Study({
                   />
                 </div>
                 <article
-                  className={['note','passage'].includes(card.kind) ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
+                  className={['note','passage','classification'].includes(card.kind) ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
                   style={{
-                    transform: !['note','passage'].includes(card.kind) && drag
+                    transform: !['note','passage','classification'].includes(card.kind) && drag
                       ? `translateX(${drag}px) rotate(${drag / 35}deg)`
                       : undefined,
                   }}
-                  data-no-swipe={card.kind === 'matching' ? true : undefined}
-                  onPointerDown={['note','passage'].includes(card.kind) ? undefined : pointerDown}
-                  onPointerMove={['note','passage'].includes(card.kind) ? undefined : pointerMove}
-                  onPointerUp={['note','passage'].includes(card.kind) ? undefined : pointerEnd}
-                  onPointerCancel={['note','passage'].includes(card.kind) ? undefined : () => {
+                  data-no-swipe={isGame ? true : undefined}
+                  onPointerDown={['note','passage','classification'].includes(card.kind) ? undefined : pointerDown}
+                  onPointerMove={['note','passage','classification'].includes(card.kind) ? undefined : pointerMove}
+                  onPointerUp={['note','passage','classification'].includes(card.kind) ? undefined : pointerEnd}
+                  onPointerCancel={['note','passage','classification'].includes(card.kind) ? undefined : () => {
                     pointer.current = null
                     setDrag(0)
                   }}
@@ -412,7 +414,7 @@ export default function Study({
                 >
                   <div className="sheet-top">
                     <span className="overline">
-                      {card.kind === 'matching' ? 'SPECIAL GAME' : ['note','passage'].includes(card.kind) ? (card.kind === 'passage' ? 'PASSAGE' : 'NOTE') : 'CARD'} {String(cursor + 1).padStart(2, '0')}
+                      {isGame ? 'SPECIAL GAME' : ['note','passage','classification'].includes(card.kind) ? (card.kind === 'passage' ? 'PASSAGE' : 'NOTE') : 'CARD'} {String(cursor + 1).padStart(2, '0')}
                     </span>
                     {onEdit && (
                       <Button
@@ -426,11 +428,11 @@ export default function Study({
                       </Button>
                     )}
                   </div>
-                  <div className={['note','passage'].includes(card.kind) ? 'note-study-content' : 'sheet-content'} key={card.id}>
-                    <h1 style={['note','passage'].includes(card.kind) ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
-                    {card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
+                  <div className={['note','passage','classification'].includes(card.kind) ? 'note-study-content' : 'sheet-content'} key={card.id}>
+                    <h1 style={['note','passage','classification'].includes(card.kind) ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
+                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
-                    ) : ['note','passage'].includes(card.kind) ? (
+                    ) : ['note','passage','classification'].includes(card.kind) ? (
                       <NoteStudy
                         body={card.body}
                         revealed={revealed}
@@ -451,7 +453,7 @@ export default function Study({
                       />
                     )}
                   </div>
-                  {card.kind !== 'matching' && <div className="sheet-bottom" data-no-swipe>
+                  {!isGame && <div className="sheet-bottom" data-no-swipe>
                     <span aria-live="polite">
                       {maskIds.length
                         ? `${revealed.size} / ${maskIds.length}개 공개`
@@ -479,8 +481,8 @@ export default function Study({
                   </div>}
                 </article>
                 <div className="study-dock">
-                  {card.kind === 'matching' && !matchingDone ? (
-                    <p className="action-hint">모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.</p>
+                  {isGame && !matchingDone ? (
+                    <p className="action-hint">{card.kind === 'classification' ? '사진을 모두 분류하면 학습 완료를 표시할 수 있어요.' : '모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.'}</p>
                   ) : !allVisible ? (
                     <>
                       <Button className="reveal-next" onClick={revealNext}>
@@ -513,14 +515,14 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    {!['note', 'matching'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
+                    {!['note', 'matching', 'classification'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />
                     </Button>
                   </div>
                 </div>
-                {card.kind !== 'matching' && <p className="keyboard-tip">
+                {!isGame && <p className="keyboard-tip">
                   <Keyboard size={14} />
                   <span>← → 카드 이동</span>
                   <span>Space 빈칸 보기</span>
