@@ -1,3 +1,4 @@
+import { emptyProgress, applyProgress, validOperation, migrateProgress } from '../src/lib/progress.js'
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, resolve, sep } from 'node:path'
@@ -224,7 +225,24 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         send(res,200,result);return
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
-        send(res, 200, { user: userView(user), decks: visibleDecks(store.read(), user) })
+        send(res, 200, { user: userView(user), decks: visibleDecks(store.read(), user), progress: user ? store.read().progress?.[user.id] || emptyProgress() : emptyProgress() })
+        return
+      }
+      if (path === '/api/progress' && req.method === 'POST') {
+        if (!user) fail(401, '로그인이 필요해요.')
+        const { operations = [], legacy } = await jsonBody(req)
+        if (!Array.isArray(operations) || operations.length > 1000 || !operations.every(validOperation))
+          fail(400, '학습 기록을 확인해 주세요.')
+        if (legacy !== undefined && (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)))
+          fail(400, '학습 기록을 확인해 주세요.')
+        const progress = await store.change(data => {
+          data.progress ||= {}
+          const target = data.progress[user.id] ||= emptyProgress()
+          if (legacy) migrateProgress(target, legacy)
+          for (const operation of operations) applyProgress(target, operation)
+          return target
+        })
+        send(res, 200, { progress })
         return
       }
       if (path === '/api/register' || path === '/api/login') {

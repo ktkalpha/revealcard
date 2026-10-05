@@ -19,6 +19,7 @@ import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
 import { api } from './lib/api'
+import { emptyProgress, applyProgress } from './lib/progress'
 import { offlineDecks, rememberedUser, rememberUser, removeOfflineDeck, saveOfflineDeck } from './lib/offline'
 import {
   DRAFT_KEY,
@@ -76,6 +77,40 @@ function App() {
   const fileInput = useRef(null)
   const busy = useRef(false)
   const requestVersion = useRef(0)
+  const progressUser = useRef(null)
+  const progressSync = useRef(Promise.resolve())
+  const progressKey = id => `revealcard.progress.v1.${id || 'guest'}`
+  const readLocal = key => { try { return JSON.parse(localStorage.getItem(key) || '{}') } catch { return {} } }
+  const syncProgress = id => {
+    const task = progressSync.current.catch(() => {}).then(async () => {
+      if (!id || progressUser.current !== id) return
+      const pendingKey = `${progressKey(id)}.pending`
+      const operations = readLocal(pendingKey)
+      const pending = Array.isArray(operations) ? operations : []
+      const migratedKey = `${progressKey(id)}.migrated`
+      if (!pending.length && localStorage.getItem(migratedKey)) return
+      await api('/api/progress', { method: 'POST', body: {
+        operations: pending.slice(0, 1000),
+        ...(!localStorage.getItem(migratedKey) ? { legacy: readLocal(progressKey(id)) } : {}),
+      } })
+      const current = readLocal(pendingKey)
+      localStorage.setItem(pendingKey, JSON.stringify(Array.isArray(current) ? current.slice(Math.min(pending.length, 1000)) : []))
+      localStorage.setItem(migratedKey, '1')
+    })
+    progressSync.current = task
+    return task
+  }
+  const recordProgress = operation => {
+    ++requestVersion.current
+    const id = user?.id
+    if (id) {
+      const key = `${progressKey(id)}.pending`
+      const current = readLocal(key)
+      localStorage.setItem(key, JSON.stringify([...(Array.isArray(current) ? current : []), operation]))
+      syncProgress(id).catch(() => setServerError('학습 기록은 기기에 보관 중이에요. 연결되면 계정에 저장합니다.'))
+    }
+    setLibrary(prev => ({ ...prev, ...applyProgress(structuredClone({ ratings: prev.ratings, positions: prev.positions, wrongMasks: prev.wrongMasks }), operation) }))
+  }
   const hasLegacy = (() => {
     try {
       return !!(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('revealcard.cards'))
@@ -94,6 +129,12 @@ function App() {
     let next
     try {
       next = await api('/api/bootstrap')
+      if (version !== requestVersion.current) return
+      progressUser.current = next.user?.id || null
+      if (next.user) {
+        await syncProgress(next.user.id)
+        next = await api('/api/bootstrap')
+      }
     } catch (error) {
       if (version !== requestVersion.current) return
       const cachedUser = rememberedUser()
@@ -104,6 +145,7 @@ function App() {
         setOfflineIds(cached.savedIds)
         setLibrary((prev) => ({
           ...prev,
+          ...emptyProgress(), ...readLocal(progressKey(cachedUser?.id)),
           decks: cached.decks,
           selectedDeckId: [preferredId, prev.selectedDeckId].find((id) =>
             cached.decks.some((item) => item.id === id),
@@ -132,6 +174,12 @@ function App() {
     setLibrary((prev) => ({
       ...prev,
       decks: next.decks,
+      ...(next.user ? (() => {
+        const progress = next.progress || emptyProgress()
+        const pending = readLocal(`${progressKey(next.user.id)}.pending`)
+        if (Array.isArray(pending)) pending.forEach(op => applyProgress(progress, op))
+        return progress
+      })() : { ...emptyProgress(), ...readLocal(progressKey(null)) }),
       selectedDeckId:
         [preferredId, prev.selectedDeckId].find((id) =>
           next.decks.some((item) => item.id === id),
@@ -154,16 +202,6 @@ function App() {
     }
   }, [refresh])
   useEffect(() => {
-    const key = `revealcard.progress.v1.${user?.id || 'guest'}`
-    try {
-      const progress = JSON.parse(localStorage.getItem(key) || '{}')
-      setLibrary((prev) => ({
-        ...prev, ratings: progress.ratings || {}, positions: progress.positions || {},
-        wrongMasks: progress.wrongMasks || {},
-      }))
-    } catch {
-      setLibrary((prev) => ({ ...prev, ratings: {}, positions: {}, wrongMasks: {} }))
-    }
     setDraft(loadDraft(localStorage, `${DRAFT_KEY}.${user?.id || 'guest'}`))
     setDraftOwner(user?.id || 'guest')
   }, [user?.id])
@@ -266,37 +304,18 @@ function App() {
   const selectDeck = (id) =>
     setLibrary((prev) => ({ ...prev, selectedDeckId: id }))
   const study = (cardId) => {
-    if (cardId)
-      setLibrary((prev) => ({
-        ...prev,
-        positions: { ...prev.positions, [deck.id]: cardId },
-      }))
+    if (cardId) recordProgress({ kind: 'positions', id: deck.id, value: cardId })
     setSessionVersion((v) => v + 1)
     setView('study')
   }
-  const position = (cardId) =>
-    setLibrary((prev) =>
-      prev.positions[deck.id] === cardId
-        ? prev
-        : { ...prev, positions: { ...prev.positions, [deck.id]: cardId } },
-    )
+  const position = cardId => {
+    if (library.positions[deck.id] !== cardId) recordProgress({ kind: 'positions', id: deck.id, value: cardId })
+  }
   const rate = (id, value) => {
-    setLibrary((prev) => ({
-      ...prev,
-      ratings: { ...prev.ratings, [id]: value },
-    }))
+    recordProgress({ kind: 'ratings', id, value })
     if (user) companion.react(value)
   }
-  const markWrong = (cardId, key, wrong) =>
-    setLibrary((prev) => {
-      const next = new Set(prev.wrongMasks[cardId] || [])
-      if (wrong) next.add(key)
-      else next.delete(key)
-      const wrongMasks = { ...prev.wrongMasks }
-      if (next.size) wrongMasks[cardId] = [...next]
-      else delete wrongMasks[cardId]
-      return { ...prev, wrongMasks }
-    })
+  const markWrong = (cardId, key, wrong) => recordProgress({ kind: 'wrong', id: cardId, key, value: wrong })
   const openDraft = (card, kind) => {
     if (!requireOwner()) return
     if (!card && deck.cards.length >= 1000) {
@@ -526,7 +545,7 @@ function App() {
                 const cached = await offlineDecks(null).catch(() => ({ decks: [], savedIds: [] }))
                 setOfflineIds(cached.savedIds)
                 setLibrary((prev) => ({
-                  ...prev, decks: cached.decks, selectedDeckId: cached.decks[0]?.id || null,
+                  ...prev, ...emptyProgress(), ...readLocal(progressKey(null)), decks: cached.decks, selectedDeckId: cached.decks[0]?.id || null,
                 }))
                 if (!cached.decks.length)
                   setServerError('서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
