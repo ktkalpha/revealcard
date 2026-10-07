@@ -695,7 +695,7 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
-      {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} ready={companion.ready} pet={companion.pet} onUpdate={companion.update} error={companion.error} job={companion.job} workerOnline={companion.workerOnline} onUpload={companion.upload} onGenerate={companion.generate} onClose={() => setModal(null)} />}
+      {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} ready={companion.ready} pet={companion.pet} onUpdate={companion.update} error={companion.error} job={companion.job} workerOnline={companion.workerOnline} onUpload={companion.upload} onGenerate={companion.generate} onCancel={companion.cancel} onClose={() => setModal(null)} />}
       {modal?.type === 'theme' && <ThemeDialog theme={theme} onChange={setTheme} storageError={themeStorageError} onClose={() => setModal(null)} />}
       {modal?.type === 'history' && <HistoryDialog deck={deck} offline={offline} onClose={() => setModal(null)} onRestore={async (version, baseVersion) => {
         const result = await run(() => api(`/api/decks/${deck.id}/restore`, { method: 'POST', body: { version, baseVersion } }), deck.id)

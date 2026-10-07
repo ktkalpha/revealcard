@@ -54,6 +54,16 @@ export function createPets(directory) {
       const id=randomUUID();data.jobs[id]={id,owner,reference:pet.reference,status:'queued',createdAt:Date.now(),attempts:0};pet.jobId=id
       return view(data,owner)
     })},
+    async cancel(owner,id){
+      if(typeof id!=='string'||!uuid.test(id))throw error(400,'취소할 작업을 확인해 주세요.')
+      return change(data=>{
+        const pet=data.pets[owner],job=data.jobs[id]
+        if(!pet||pet.jobId!==id||!job||job.owner!==owner)throw error(404,'작업을 찾을 수 없어요.')
+        if(['queued','running'].includes(job.status)){job.status='cancelled';job.cancelledAt=Date.now();job.error=null}
+        return view(data,owner)
+      })
+    },
+    async active(id,claim){const job=(await read()).jobs[id];return !!job&&job.claim===claim&&job.status==='running'},
     async asset(owner,name){
       if(!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(name))throw error(404,'이미지를 찾을 수 없어요.')
       const data=await read();const pet=data.pets[owner];const allowed=pet?.reference===name || Object.values(data.jobs).some(j=>j.owner===owner&&(j.output===name||j.reference===name))

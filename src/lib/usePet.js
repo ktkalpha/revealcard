@@ -51,16 +51,9 @@ export default function usePet(owner) {
     const {enabled,name,size,side,position}=next
     mutate(()=>api('/api/pet',{method:'PUT',body:{enabled,name,size,side,position}})).catch(()=>{})
   }
-  const upload=image=> {
-    const epoch=generation.current
-    return mutate(async()=> {
-    const result=await api('/api/pet/reference',{method:'POST',body:{image}})
-    if(epoch===generation.current) {current.current=result;setSnapshot({owner,...result})}
-    if(epoch!==generation.current)return null
-    return api('/api/pet/generate',{method:'POST'})
-    })
-  }
-  const generate=()=>mutate(()=>api('/api/pet/generate',{method:'POST'}))
+  const upload=image=>mutate(()=>api('/api/pet/reference',{method:'POST',body:{image}}))
+  const generate=()=>mutate(()=>api('/api/pet/generate',{method:'POST',body:{confirmed:true}}))
+  const cancel=jobId=>mutate(()=>api('/api/pet/cancel',{method:'POST',body:{jobId}}))
   const react=event=>{if(pet.enabled)setReaction(prev=>({state:petExpression(event),serial:prev.serial+1}))}
-  return {pet,reaction,error,ready:snapshot?.owner===owner,job:snapshot?.owner===owner?snapshot.job:null,workerOnline:snapshot?.owner===owner&&snapshot.workerOnline,update,upload,generate,react}
+  return {pet,reaction,error,ready:snapshot?.owner===owner,job:snapshot?.owner===owner?snapshot.job:null,workerOnline:snapshot?.owner===owner&&snapshot.workerOnline,update,upload,generate,cancel,react}
 }

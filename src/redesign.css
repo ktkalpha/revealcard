@@ -340,3 +340,11 @@ body, body *, input, textarea, button, select, code, pre { font-family: 'KoPubWo
 .classification-study-page .note-study-content { padding: 16px 0 10px; }
 .classification-study-page .classification-photo { height: clamp(250px,34vh,350px); }
 @media (max-width: 760px) { .classification-study-page .classification-photo { height: 260px; } }
+
+.pet-generation-progress { display:flex; align-items:center; gap:10px; margin-top:14px; padding:12px; border-radius:8px; background:var(--ui-tint); font-size:12px; line-height:1.6; }
+.pet-generation-spinner { flex-shrink:0; animation:pet-generation-spin 1s linear infinite; }
+@keyframes pet-generation-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .pet-generation-spinner { animation:none; } }
+
+.pet-generation-progress > span { flex:1; }
+.pet-generation-progress .button { flex-shrink:0; }

@@ -220,7 +220,12 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         if(path === '/api/pet' && req.method === 'GET')result=await pets.get(user.id)
         else if(path === '/api/pet' && req.method === 'PUT')result=await pets.settings(user.id,await jsonBody(req))
         else if(path === '/api/pet/reference' && req.method === 'POST')result=await pets.reference(user.id,(await jsonBody(req)).image)
-        else if(path === '/api/pet/generate' && req.method === 'POST')result=await pets.generate(user.id)
+        else if(path === '/api/pet/generate' && req.method === 'POST'){
+          const {confirmed}=await jsonBody(req)
+          if(confirmed!==true)fail(400,'완료를 눌러 펫 생성을 시작해 주세요.')
+          result=await pets.generate(user.id)
+        }
+        else if(path === '/api/pet/cancel' && req.method === 'POST')result=await pets.cancel(user.id,(await jsonBody(req)).jobId)
         else fail(404,'요청을 찾을 수 없어요.')
         send(res,200,result);return
       }
