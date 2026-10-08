@@ -2668,3 +2668,19 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); }
   margin-top: 12px;
   font-size: 13px;
 }
+
+.image-stroke {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.image-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid #0003;
+  vertical-align: -1px;
+}

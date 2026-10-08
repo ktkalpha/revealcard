@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Crop, ImagePlus, LassoSelect, Undo2 } from 'lucide-react'
+import { Crop, Highlighter, ImagePlus, LassoSelect, Undo2 } from 'lucide-react'
 import { Button } from './ui/button'
 import Modal from './Modal'
 import { api } from '../lib/api'
@@ -8,6 +8,8 @@ import { CARD_IMAGE_MAX_BYTES, imageMarkdown } from '../lib/images'
 
 const MAX_SIDE = 1600
 const RATIOS = [['free', '자유', 0], ['1:1', '1 : 1', 1], ['4:3', '4 : 3', 4 / 3], ['16:9', '16 : 9', 16 / 9]]
+const COLORS = [['yellow', '노랑', '#ffe14d'], ['pink', '분홍', '#ff8fb3'], ['green', '초록', '#7be495'], ['blue', '파랑', '#6ec1ff']]
+const WIDTHS = [['thin', '얇게', 0.012], ['normal', '보통', 0.025], ['thick', '굵게', 0.05]]
 const TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
 const loadImage = (url) => new Promise((resolve, reject) => {
@@ -18,7 +20,7 @@ const loadImage = (url) => new Promise((resolve, reject) => {
 })
 
 // Draws `rect` of the image to a canvas, optionally clipped to a free-form path.
-function render(image, rect, path) {
+function render(image, rect, path, strokes = []) {
   const size = fitWithin(rect.width, rect.height, MAX_SIDE)
   const canvas = document.createElement('canvas')
   canvas.width = size.width
@@ -33,6 +35,17 @@ function render(image, rect, path) {
     context.clip()
   }
   context.drawImage(image, 0, 0)
+  // Multiply keeps the text under a highlight readable, like a real highlighter.
+  context.globalCompositeOperation = 'multiply'
+  context.lineCap = context.lineJoin = 'round'
+  for (const stroke of strokes) {
+    context.strokeStyle = stroke.color
+    context.lineWidth = stroke.width
+    context.beginPath()
+    stroke.points.forEach((point, index) => (index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y)))
+    if (stroke.points.length === 1) context.lineTo(stroke.points[0].x + 0.01, stroke.points[0].y)
+    context.stroke()
+  }
   return canvas
 }
 
@@ -60,6 +73,9 @@ export default function ImageDialog({ onClose, onInsert }) {
   const [ratio, setRatio] = useState('free')
   const [box, setBox] = useState(null)
   const [path, setPath] = useState([])
+  const [strokes, setStrokes] = useState([])
+  const [color, setColor] = useState('yellow')
+  const [thickness, setThickness] = useState('normal')
   const [alt, setAlt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -81,6 +97,7 @@ export default function ImageDialog({ onClose, onInsert }) {
       setCurrent(next)
       setBox(null)
       setPath([])
+      setStrokes([])
       setAlt((value) => value || file.name.replace(/\.[^.]+$/, '').slice(0, 60))
     } catch (e) {
       setError(e.message)
@@ -112,13 +129,17 @@ export default function ImageDialog({ onClose, onInsert }) {
     event.currentTarget.setPointerCapture(event.pointerId)
     const origin = point(event)
     drag.current = { origin }
-    if (mode === 'box') setBox(null)
+    if (mode === 'mark') {
+      const width = current.width * WIDTHS.find(([key]) => key === thickness)[2]
+      setStrokes((all) => [...all, { color: COLORS.find(([key]) => key === color)[2], width, points: [origin] }])
+    } else if (mode === 'box') setBox(null)
     else setPath([origin])
   }
   const move = (event) => {
     if (!drag.current) return
     const next = point(event)
-    if (mode === 'box') setBox(boxFromDrag(drag.current.origin, next, current, ratioValue))
+    if (mode === 'mark') setStrokes((all) => all.map((stroke, index) => (index === all.length - 1 ? { ...stroke, points: [...stroke.points, next] } : stroke)))
+    else if (mode === 'box') setBox(boxFromDrag(drag.current.origin, next, current, ratioValue))
     else setPath((points) => {
       const last = points[points.length - 1]
       return last && Math.hypot(next.x - last.x, next.y - last.y) < current.width / 300 ? points : [...points, next]
@@ -131,7 +152,7 @@ export default function ImageDialog({ onClose, onInsert }) {
     : (path.length >= 3 && usableCrop(pathBounds(path)) ? { rect: pathBounds(path), path } : null)
 
   const bake = async () => {
-    const canvas = render(current.image, selection.rect, selection.path)
+    const canvas = render(current.image, selection.rect, selection.path, strokes)
     const url = await blobUrl(canvas)
     urls.current.push(url)
     const image = await loadImage(url)
@@ -139,6 +160,7 @@ export default function ImageDialog({ onClose, onInsert }) {
     setCurrent(next)
     setBox(null)
     setPath([])
+    setStrokes([])
     return next
   }
   const crop = async () => {
@@ -149,6 +171,7 @@ export default function ImageDialog({ onClose, onInsert }) {
     setCurrent(original)
     setBox(null)
     setPath([])
+    setStrokes([])
     setError('')
   }
   const insert = async () => {
@@ -156,7 +179,7 @@ export default function ImageDialog({ onClose, onInsert }) {
     setError('')
     try {
       const source = selection ? await bake() : current
-      const canvas = render(source.image, { x: 0, y: 0, width: source.width, height: source.height })
+      const canvas = render(source.image, { x: 0, y: 0, width: source.width, height: source.height }, null, selection ? [] : strokes)
       const image = encode(canvas, source.jpeg && !source.cropped && !source.transparent)
       const { url } = await api('/api/images', { method: 'POST', body: { image } })
       onInsert(imageMarkdown(alt, url))
@@ -193,7 +216,29 @@ export default function ImageDialog({ onClose, onInsert }) {
               <button type="button" aria-pressed={mode === 'free'} onClick={() => { setMode('free'); setBox(null) }}>
                 <LassoSelect size={15} /> 자유 자르기
               </button>
+              <button type="button" aria-pressed={mode === 'mark'} onClick={() => { setMode('mark'); setBox(null); setPath([]) }}>
+                <Highlighter size={15} /> 형광펜
+              </button>
             </div>
+            {mode === 'mark' && (
+              <>
+                <div className="segmented" role="group" aria-label="형광펜 색">
+                  {COLORS.map(([key, label, value]) => (
+                    <button key={key} type="button" aria-pressed={color === key} onClick={() => setColor(key)}>
+                      <span className="image-swatch" style={{ background: value }} /> {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="segmented" role="group" aria-label="형광펜 굵기">
+                  {WIDTHS.map(([key, label]) => (
+                    <button key={key} type="button" aria-pressed={thickness === key} onClick={() => setThickness(key)}>{label}</button>
+                  ))}
+                </div>
+                <Button type="button" variant="ghost" size="sm" disabled={!strokes.length} onClick={() => setStrokes((all) => all.slice(0, -1))}>
+                  <Undo2 size={15} /> 마지막 획 취소
+                </Button>
+              </>
+            )}
             {mode === 'box' && (
               <div className="segmented" role="group" aria-label="자르기 비율">
                 {RATIOS.map(([key, label]) => (
@@ -203,7 +248,7 @@ export default function ImageDialog({ onClose, onInsert }) {
             )}
           </div>
           <p className="field-hint">
-            {mode === 'box' ? '사진 위를 드래그해 자를 영역을 정하세요.' : '남길 부분의 테두리를 따라 그려 보세요. 바깥쪽은 투명해져요.'}
+            {mode === 'box' ? '사진 위를 드래그해 자를 영역을 정하세요.' : mode === 'free' ? '남길 부분의 테두리를 따라 그려 보세요. 바깥쪽은 투명해져요.' : '강조할 부분을 따라 칠하세요. 자르기와 함께 써도 돼요.'}
           </p>
           <div className="image-stage-wrap">
             <div className={`image-stage ${current.transparent ? 'checker' : ''}`}>
@@ -216,6 +261,15 @@ export default function ImageDialog({ onClose, onInsert }) {
                 onPointerUp={end}
                 onPointerCancel={end}
               >
+                {strokes.map((stroke, index) => (
+                  <polyline
+                    key={index}
+                    className="image-stroke"
+                    points={stroke.points.length === 1 ? `${stroke.points[0].x},${stroke.points[0].y} ${stroke.points[0].x + 0.01},${stroke.points[0].y}` : stroke.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                    stroke={stroke.color}
+                    strokeWidth={stroke.width}
+                  />
+                ))}
                 {outline && (
                   <>
                     <path className="image-dim" fillRule="evenodd" d={`M0 0H${current.width}V${current.height}H0Z${mode === 'box' || path.length >= 3 ? outline : ''}`} />
@@ -230,10 +284,10 @@ export default function ImageDialog({ onClose, onInsert }) {
             <input value={alt} maxLength={60} placeholder="예: 헌병 경찰서 배치도" onChange={(e) => setAlt(e.target.value)} />
           </label>
           <div className="modal-actions">
-            <Button type="button" variant="ghost" onClick={reset} disabled={busy || current === original}>
+            <Button type="button" variant="ghost" onClick={reset} disabled={busy || (current === original && !strokes.length)}>
               <Undo2 size={16} /> 원본으로
             </Button>
-            <Button type="button" variant="ghost" onClick={() => { setOriginal(null); setCurrent(null); setBox(null); setPath([]) }} disabled={busy}>
+            <Button type="button" variant="ghost" onClick={() => { setOriginal(null); setCurrent(null); setBox(null); setPath([]); setStrokes([]) }} disabled={busy}>
               다른 사진
             </Button>
             <Button type="button" variant="outline" onClick={crop} disabled={busy || !selection}>자르기 적용</Button>
