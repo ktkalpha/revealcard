@@ -389,6 +389,19 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             deck.cards.splice(index, 0, ...body.cards.map(cardInput))
             finishEdit(data, deck, user, 'add-cards')
           })
+        } else if (parts.length === 6 && parts[3] === 'cards' && parts[5] === 'move' && req.method === 'POST') {
+          await store.change((data) => {
+            const deck = editableDeck(data, id, user)
+            beginEdit(data, deck, user, body.baseVersion)
+            const from = deck.cards.findIndex((card) => card.id === parts[4])
+            if (from < 0) fail(404, '카드를 찾을 수 없어요.')
+            if (!Number.isInteger(body.index) || body.index < 0 || body.index >= deck.cards.length)
+              fail(400, '옮길 위치가 올바르지 않아요.')
+            if (body.index === from) return
+            const [card] = deck.cards.splice(from, 1)
+            deck.cards.splice(body.index, 0, card)
+            finishEdit(data, deck, user, 'move-card')
+          })
         } else if (parts.length === 5 && parts[3] === 'cards' && ['PUT', 'DELETE'].includes(req.method)) {
           await store.change((data) => {
             const deck = editableDeck(data, id, user)

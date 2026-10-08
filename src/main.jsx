@@ -387,6 +387,15 @@ function App() {
       setNotice(null)
     })
   }
+  const moveCard = async (card, offset) => {
+    const targetId = deck.id,
+      from = deck.cards.findIndex((c) => c.id === card.id),
+      index = from + offset
+    if (from < 0 || index < 0 || index >= deck.cards.length) return
+    await run(() => api(`/api/decks/${targetId}/cards/${card.id}/move`, {
+      method: 'POST', body: { index, baseVersion: deck.version },
+    }), targetId)
+  }
   const deleteDeck = async () => {
     const deleted = deck
     if (!await run(() => api(`/api/decks/${deleted.id}`, { method: 'DELETE' })))
@@ -633,6 +642,7 @@ function App() {
           onPassage={openPassage}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
+          onMove={moveCard}
           onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
           onRenameDeck={() => deck.canEdit && setModal({ type: 'rename' })}
           onDeleteDeck={() => deck.canManage && setModal({ type: 'delete-deck' })}

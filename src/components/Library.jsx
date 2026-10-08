@@ -4,6 +4,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronUp,
   Download,
   FileUp,
   Pencil,
@@ -47,6 +48,7 @@ export default function Library({
   offlineSaved,
   onOfflineSave,
   onOfflineRemove,
+  onMove,
 }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -328,6 +330,26 @@ export default function Library({
                     </span>
                   </button>
                   {deck.canEdit && <div className="card-row-actions">
+                    {filter === 'all' && !search.trim() && !offline && <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${card.title} 위로 이동`}
+                        disabled={index === 0}
+                        onClick={() => onMove(card, -1)}
+                      >
+                        <ChevronUp size={16} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${card.title} 아래로 이동`}
+                        disabled={index === filtered.length - 1}
+                        onClick={() => onMove(card, 1)}
+                      >
+                        <ChevronDown size={16} />
+                      </Button>
+                    </>}
                     <Button
                       variant="ghost"
                       size="icon"
