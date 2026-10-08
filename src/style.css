@@ -2556,3 +2556,22 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent); }
 .theme-mode { display: flex; gap: 8px; margin: 16px 0; }
 .theme-advanced { margin-top: 18px; }
 .theme-advanced summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+/* 카드 순서 끌어서 변경 */
+.card-row-actions .drag-handle {
+  cursor: grab;
+  touch-action: none;
+  color: var(--tone-8f9584, #8f9584);
+}
+.card-row-actions .drag-handle:active {
+  cursor: grabbing;
+}
+.card-list > li.dragging {
+  opacity: 0.5;
+}
+.card-list > li.drop-before {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+.card-list > li.drop-after {
+  box-shadow: 0 2px 0 var(--accent);
+}

@@ -387,11 +387,10 @@ function App() {
       setNotice(null)
     })
   }
-  const moveCard = async (card, offset) => {
+  const moveCard = async (card, index) => {
     const targetId = deck.id,
-      from = deck.cards.findIndex((c) => c.id === card.id),
-      index = from + offset
-    if (from < 0 || index < 0 || index >= deck.cards.length) return
+      from = deck.cards.findIndex((c) => c.id === card.id)
+    if (from < 0 || index === from || index < 0 || index >= deck.cards.length) return
     await run(() => api(`/api/decks/${targetId}/cards/${card.id}/move`, {
       method: 'POST', body: { index, baseVersion: deck.version },
     }), targetId)

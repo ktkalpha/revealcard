@@ -1,12 +1,12 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import {
   ArrowRight,
   BookOpen,
   Check,
   ChevronDown,
-  ChevronUp,
   Download,
   FileUp,
+  GripVertical,
   Pencil,
   Play,
   Plus,
@@ -59,6 +59,36 @@ export default function Library({
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   )
+  const canReorder = deck.canEdit && !offline && filter === 'all' && !search.trim()
+  const list = useRef(null)
+  const [drag, setDrag] = useState(null)
+  const startDrag = (e, card, index) => {
+    if (e.button > 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({ id: card.id, from: index, over: index })
+  }
+  const moveDrag = (e) => {
+    if (!drag) return
+    const rows = [...list.current.children]
+    let over = rows.findIndex((row) => {
+      const box = row.getBoundingClientRect()
+      return e.clientY < box.top + box.height / 2
+    })
+    if (over < 0) over = rows.length - 1
+    // 내려놓는 위치는 "이동 후 최종 인덱스"이므로, 아래로 끌 때는 한 칸 보정한다.
+    if (over > drag.from) over -= 1
+    if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 16)
+    else if (e.clientY < 60) window.scrollBy(0, -16)
+    if (over !== drag.over) setDrag({ ...drag, over })
+  }
+  const endDrag = (e) => {
+    if (!drag) return
+    e.currentTarget.releasePointerCapture?.(e.pointerId)
+    const { from, over } = drag
+    setDrag(null)
+    if (over !== from) onMove(deck.cards.find((c) => c.id === drag.id), over)
+  }
+  const cancelDrag = () => setDrag(null)
   const known = deck.cards.filter((c) => ratings[c.id] === 'known').length
   const again = deck.cards.filter((c) => ratings[c.id] === 'again').length
   const publicDecks = decks.filter((item) => item.visibility === 'public')
@@ -295,9 +325,15 @@ export default function Library({
               )}
             </div>
           ) : (
-            <ol className="card-list">
+            <ol className="card-list" ref={list}>
               {filtered.map((card, index) => (
-                <li key={card.id}>
+                <li
+                  key={card.id}
+                  className={drag ? [
+                    drag.id === card.id && 'dragging',
+                    drag.over === index && drag.over !== drag.from && (drag.over > drag.from ? 'drop-after' : 'drop-before'),
+                  ].filter(Boolean).join(' ') : undefined}
+                >
                   <button
                     className="card-row-main"
                     onClick={() => onStudy(card.id)}
@@ -330,26 +366,26 @@ export default function Library({
                     </span>
                   </button>
                   {deck.canEdit && <div className="card-row-actions">
-                    {filter === 'all' && !search.trim() && !offline && <>
+                    {canReorder && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`${card.title} 위로 이동`}
-                        disabled={index === 0}
-                        onClick={() => onMove(card, -1)}
+                        className="drag-handle"
+                        aria-label={`${card.title} 순서 변경 (끌어서 이동, 또는 위·아래 방향키)`}
+                        onPointerDown={(e) => startDrag(e, card, index)}
+                        onPointerMove={moveDrag}
+                        onPointerUp={endDrag}
+                        onPointerCancel={cancelDrag}
+                        onKeyDown={(e) => {
+                          const step = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
+                          if (!step || index + step < 0 || index + step >= filtered.length) return
+                          e.preventDefault()
+                          onMove(card, index + step)
+                        }}
                       >
-                        <ChevronUp size={16} />
+                        <GripVertical size={16} />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`${card.title} 아래로 이동`}
-                        disabled={index === filtered.length - 1}
-                        onClick={() => onMove(card, 1)}
-                      >
-                        <ChevronDown size={16} />
-                      </Button>
-                    </>}
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
