@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { X, Check } from 'lucide-react'
 import { prepareMarkdown, remarkMasks } from '../lib/markdown'
 import { maskKey } from '../lib/masks'
+import { CARD_IMAGE_URL } from '../lib/images'
 
 export default function MaskedText({
   body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong,
@@ -71,8 +72,11 @@ export default function MaskedText({
               </code>
             )
           },
-          img({ alt }) {
-            return <span>{alt}</span>
+          img({ src, alt }) {
+            // Only photos uploaded through the app load; external images stay alt-text only.
+            return CARD_IMAGE_URL.test(src || '')
+              ? <img className="card-image" src={src} alt={alt || ''} loading="lazy" />
+              : <span>{alt}</span>
           },
         }}
       >

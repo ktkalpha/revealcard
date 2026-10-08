@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   Highlighter,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -20,6 +21,7 @@ import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import MatchingEditor from './MatchingEditor'
 import ClassificationEditor from './ClassificationEditor'
+import ImageDialog from './ImageDialog'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
 
 export default function Editor({
@@ -36,6 +38,7 @@ export default function Editor({
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState(new Set())
   const [history, setHistory] = useState([])
+  const [adding, setAdding] = useState(false)
   const { card } = draft
   const ids = masksIn(card.body).map((mask) => mask.id)
   const syntaxError = bodyError(card.body)
@@ -89,6 +92,22 @@ export default function Editor({
     setHistory((prev) => [...prev.slice(-19), card.body])
     updateBody(card.body.slice(0, lineStart) + formatted + card.body.slice(end))
     requestAnimationFrame(() => area.current.focus())
+  }
+  const insertImage = (markdown) => {
+    const [start, end] = selection.current
+    const before = card.body.slice(0, start)
+    const after = card.body.slice(end)
+    const text = `${before && !before.endsWith('\n') ? '\n\n' : ''}${markdown}${after && !after.startsWith('\n') ? '\n\n' : ''}`
+    setHistory((prev) => [...prev.slice(-19), card.body])
+    updateBody(before + text + after)
+    setAdding(false)
+    requestAnimationFrame(() => {
+      const caret = start + text.length
+      area.current.focus()
+      area.current.setSelectionRange(caret, caret)
+      selection.current = [caret, caret]
+      setSelected(false)
+    })
   }
   const undo = () => {
     if (!history.length) return
@@ -225,6 +244,17 @@ export default function Editor({
               >
                 <List size={16} />
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="사진 추가"
+                title="사진 추가"
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => setAdding(true)}
+              >
+                <ImagePlus size={16} />
+              </Button>
             </div>
             <textarea
               ref={area}
@@ -324,6 +354,7 @@ export default function Editor({
           <p className="field-hint">빈칸을 눌러 실제 학습처럼 확인해 보세요.</p>
         </aside>
       </form>
+      {adding && <ImageDialog onClose={() => setAdding(false)} onInsert={insertImage} />}
     </main>
   )
 }

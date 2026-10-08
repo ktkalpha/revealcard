@@ -10,6 +10,7 @@ import { passageError, passageData } from '../src/lib/passage.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
 import { createPets } from './pets.js'
+import { createImages } from './images.js'
 
 const hashPassword = promisify(scrypt)
 const MAX_BODY = 25 * 1024 * 1024
@@ -152,6 +153,7 @@ async function jsonBody(req) {
 export async function createApp({ dataFile, distDir, secureCookies = false }) {
   const store = await createStore(dataFile)
   const pets = createPets(resolve(dirname(dataFile), 'pets'))
+  const images = createImages(resolve(dirname(dataFile), 'images'))
   // Only token hashes are persisted; the bearer token stays in the HttpOnly cookie.
   if (Object.values(store.read().sessions || {}).some(session => !liveSession(session)))
     await store.change(pruneSessions)
@@ -228,6 +230,25 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         else if(path === '/api/pet/cancel' && req.method === 'POST')result=await pets.cancel(user.id,(await jsonBody(req)).jobId)
         else fail(404,'요청을 찾을 수 없어요.')
         send(res,200,result);return
+      }
+      if (path.startsWith('/api/images/') && req.method === 'GET') {
+        const name = path.slice('/api/images/'.length)
+        const bytes = await images.read(name)
+        res.writeHead(200, {
+          'Content-Type': name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : 'image/png',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "default-src 'none'",
+        })
+        res.end(bytes)
+        return
+      }
+      if (path === '/api/images' && req.method === 'POST') {
+        if (!user) fail(401, '사진을 올리려면 로그인이 필요해요.')
+        const { image } = await jsonBody(req)
+        const saved = await images.save(image)
+        send(res, 201, { url: saved.url })
+        return
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
         send(res, 200, { user: userView(user), decks: visibleDecks(store.read(), user), progress: user ? store.read().progress?.[user.id] || emptyProgress() : emptyProgress() })

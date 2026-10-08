@@ -23,6 +23,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+        runtimeCaching: [{
+          urlPattern: ({ url }) => /^\/api\/images\/[0-9a-f-]{36}\.(?:png|jpg|webp)$/.test(url.pathname),
+          handler: 'CacheFirst',
+          options: { cacheName: 'card-images', expiration: { maxEntries: 200 }, cacheableResponse: { statuses: [200] } },
+        }],
       },
     }),
   ],
