@@ -1,5 +1,8 @@
 import React, { useLayoutEffect, useRef, useState } from 'react'
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowLeft,
   Bold,
   Check,
@@ -167,6 +170,27 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
               <Hand size={16} /> 탭해서 가리기
             </button>
             <span className="editor-mask-count">가리개 {ids.length}개</span>
+          </div>
+          <div className="alignment-control">
+            <span>텍스트 정렬</span>
+            <div className="segmented" role="group" aria-label="텍스트 정렬">
+              {[
+                ['left', AlignLeft, '왼쪽 정렬'],
+                ['center', AlignCenter, '가운데 정렬'],
+                ['right', AlignRight, '오른쪽 정렬'],
+              ].map(([value, Icon, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={align === value}
+                  onClick={() => change({ ...card, align: value })}
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
+            </div>
           </div>
           {mode === 'write' ? (
             <div className="writing-area">

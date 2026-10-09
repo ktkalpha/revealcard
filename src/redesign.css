@@ -487,3 +487,4 @@ body, body *, input, textarea, button, select, code, pre { font-family: 'KoPubWo
 .admin-badge-banned { background: #f6dcd9; color: #9b2c24; }
 .admin-banned td { color: var(--muted); }
 .admin-table .admin-kick { color: #b4382f; }
+.alignment-control { margin: 0 0 10px; }
