@@ -1679,7 +1679,7 @@ kbd {
   padding: 25px;
   min-height: 330px;
 }
-.preview-sheet h2 {
+.preview-sheet > h2 {
   text-align: center;
   font-size: 22px;
   margin: 33px 0 22px;
@@ -2410,7 +2410,7 @@ footer span:first-child {
   .preview-sheet {
     min-height: 270px;
   }
-  .preview-sheet h2 {
+  .preview-sheet > h2 {
     margin-top: 24px;
   }
   .modal {
