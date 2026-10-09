@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
-import { newPet, petExpression } from './pet'
 
 export default function usePet(owner) {
   const [snapshot,setSnapshot] = useState(null)
   const [error,setError] = useState('')
-  const [reaction,setReaction] = useState({state:'idle',serial:0})
+  // petId limits a reaction (a pat) to one pet; study events reach every displayed pet.
+  const [reaction,setReaction] = useState({event:'idle',petId:null,serial:0})
   const current = useRef(null), chain = useRef(Promise.resolve()), pending = useRef(0), generation = useRef(0)
-  const pet = snapshot?.owner === owner ? snapshot.pet : newPet()
+  const pets = snapshot?.owner === owner ? snapshot.pets : []
   useEffect(()=> {
     const epoch=++generation.current
     let active=true
     current.current=null;pending.current=0;chain.current=Promise.resolve()
-    setSnapshot(null);setError('');setReaction({state:'idle',serial:0})
+    setSnapshot(null);setError('');setReaction({event:'idle',petId:null,serial:0})
     if(!owner)return
     const refresh=async()=> {
       if(pending.current)return
@@ -26,8 +26,8 @@ export default function usePet(owner) {
     return()=>{active=false;clearInterval(timer)}
   },[owner])
   useEffect(()=> {
-    if(reaction.state==='idle')return
-    const timer=setTimeout(()=>setReaction(prev=>({...prev,state:'idle'})),3500)
+    if(reaction.event==='idle')return
+    const timer=setTimeout(()=>setReaction(prev=>({...prev,event:'idle',petId:null})),3500)
     return()=>clearTimeout(timer)
   },[reaction])
   function mutate(operation) {
@@ -43,17 +43,24 @@ export default function usePet(owner) {
     chain.current=task.catch(()=>{})
     return task
   }
-  function update(action) {
-    if(!owner || !current.current)return
-    const next=action(current.current.pet)
-    current.current={...current.current,pet:next}
+  function update(id,action) {
+    const pet=current.current?.pets.find(item=>item.id===id)
+    if(!owner || !pet)return
+    const next=action(pet)
+    current.current={...current.current,pets:current.current.pets.map(item=>item.id===id?next:item)}
     setSnapshot({owner,...current.current})
-    const {enabled,name,size,side,position}=next
-    mutate(()=>api('/api/pet',{method:'PUT',body:{enabled,name,size,side,position}})).catch(()=>{})
+    const {enabled,name,description,size,side,position,mapping}=next
+    mutate(()=>api(`/api/pet/${id}`,{method:'PUT',body:{enabled,name,description,size,side,position,mapping}})).catch(()=>{})
   }
-  const upload=image=>mutate(()=>api('/api/pet/reference',{method:'POST',body:{image}}))
-  const generate=()=>mutate(()=>api('/api/pet/generate',{method:'POST',body:{confirmed:true}}))
+  const create=name=>mutate(()=>api('/api/pet',{method:'POST',body:{name}}))
+  const remove=id=>mutate(()=>api(`/api/pet/${id}`,{method:'DELETE'}))
+  const upload=(id,image)=>mutate(()=>api(`/api/pet/${id}/reference`,{method:'POST',body:{image}}))
+  const generate=id=>mutate(()=>api(`/api/pet/${id}/generate`,{method:'POST',body:{confirmed:true}}))
   const cancel=jobId=>mutate(()=>api('/api/pet/cancel',{method:'POST',body:{jobId}}))
-  const react=event=>{if(pet.enabled)setReaction(prev=>({state:petExpression(event),serial:prev.serial+1}))}
-  return {pet,reaction,error,ready:snapshot?.owner===owner,job:snapshot?.owner===owner?snapshot.job:null,workerOnline:snapshot?.owner===owner&&snapshot.workerOnline,update,upload,generate,cancel,react}
+  const addExpression=(id,expression)=>mutate(()=>api(`/api/pet/${id}/expressions`,{method:'POST',body:expression}))
+  const regenerateExpression=(id,expressionId)=>mutate(()=>api(`/api/pet/${id}/expressions/${expressionId}/generate`,{method:'POST',body:{}}))
+  const removeExpression=(id,expressionId)=>mutate(()=>api(`/api/pet/${id}/expressions/${expressionId}`,{method:'DELETE'}))
+  const react=(event,petId=null)=>{if(pets.some(pet=>pet.enabled))setReaction(prev=>({event,petId,serial:prev.serial+1}))}
+  const ready=snapshot?.owner===owner
+  return {pets,reaction,error,ready,workerOnline:ready&&snapshot.workerOnline,limits:ready?snapshot.limits:{pets:5,expressions:12},update,create,remove,upload,generate,cancel,addExpression,regenerateExpression,removeExpression,react}
 }

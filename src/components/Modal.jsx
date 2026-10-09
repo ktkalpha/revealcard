@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './ui/button'
 
-export default function Modal({ title, onClose, children, wide = false }) {
+export default function Modal({ title, onClose, children, wide = false, className = '' }) {
   const ref = useRef(null)
   useEffect(() => {
     const dialog = ref.current
@@ -18,7 +18,7 @@ export default function Modal({ title, onClose, children, wide = false }) {
   return (
     <dialog
       ref={ref}
-      className={`modal ${wide ? 'modal-wide' : ''}`}
+      className={`modal ${wide ? 'modal-wide' : ''} ${className}`}
       aria-labelledby="dialog-title"
       onCancel={(e) => {
         e.preventDefault()

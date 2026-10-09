@@ -19,12 +19,14 @@ import {
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
-import NoteStudy from './NoteStudy'
 import PassageText from './PassageText'
 import MatchingGame from './MatchingGame'
 import ClassificationGame from './ClassificationGame'
-import StudyPet from './StudyPet'
+import OcclusionImage from './OcclusionImage'
+import StudyPets from './StudyPet'
 import { masksIn, wrongMaskIds } from '../lib/masks'
+import { occlusionMasks } from '../lib/occlusion'
+import { isStructured } from '../lib/editing'
 
 export default function Study({
   deck,
@@ -64,7 +66,10 @@ export default function Study({
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
   const isGame = ['matching','classification'].includes(card?.kind)
-  const cardMasks = masksIn(card?.body || '')
+  // Notes are ordinary cards now; only passages and photo games keep a page layout.
+  const wide = ['passage','classification'].includes(card?.kind)
+  const textAlign = card?.align || (isStructured(card?.body || '') ? 'left' : 'center')
+  const cardMasks = card?.kind === 'occlusion' ? occlusionMasks(card.body) : masksIn(card?.body || '')
   const focusIds = reviewMode === 'masks'
     ? new Set(focusByCard[card?.id] || [])
     : null
@@ -219,11 +224,11 @@ export default function Study({
   useEffect(() => {
     if (complete) companion?.react('complete')
   }, [complete])
-  const petProps = companion ? { pet: companion.pet, reaction: companion.reaction, onReact: companion.react, onSettings: onPetSettings, onMove: position => companion.update(prev => ({...prev,position})) } : null
+  const petProps = companion ? { pets: companion.pets, reaction: companion.reaction, onReact: companion.react, onSettings: onPetSettings, onMove: (id, position) => companion.update(id, prev => ({...prev,position})) } : null
   return (
     <main
       id="main"
-      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${['note','passage','classification'].includes(card?.kind) ? ' note-study-page' : ''}`}
+      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${wide ? ' note-study-page' : ''}`}
     >
       <div className="study-layout">
         <aside className="study-overview" aria-label="학습 현황">
@@ -390,17 +395,17 @@ export default function Study({
                   />
                 </div>
                 <article
-                  className={['note','passage','classification'].includes(card.kind) ? 'note-study' : `card-sheet paper ${drag ? 'dragging' : ''}`}
+                  className={wide ? 'note-study' : `card-sheet paper ${textAlign === 'left' ? 'long-card' : ''} ${drag ? 'dragging' : ''}`}
                   style={{
-                    transform: !['note','passage','classification'].includes(card.kind) && drag
+                    transform: !wide && drag
                       ? `translateX(${drag}px) rotate(${drag / 35}deg)`
                       : undefined,
                   }}
                   data-no-swipe={isGame ? true : undefined}
-                  onPointerDown={['note','passage','classification'].includes(card.kind) ? undefined : pointerDown}
-                  onPointerMove={['note','passage','classification'].includes(card.kind) ? undefined : pointerMove}
-                  onPointerUp={['note','passage','classification'].includes(card.kind) ? undefined : pointerEnd}
-                  onPointerCancel={['note','passage','classification'].includes(card.kind) ? undefined : () => {
+                  onPointerDown={wide ? undefined : pointerDown}
+                  onPointerMove={wide ? undefined : pointerMove}
+                  onPointerUp={wide ? undefined : pointerEnd}
+                  onPointerCancel={wide ? undefined : () => {
                     pointer.current = null
                     setDrag(0)
                   }}
@@ -414,7 +419,7 @@ export default function Study({
                 >
                   <div className="sheet-top">
                     <span className="overline">
-                      {isGame ? 'SPECIAL GAME' : ['note','passage','classification'].includes(card.kind) ? (card.kind === 'passage' ? 'PASSAGE' : 'NOTE') : 'CARD'} {String(cursor + 1).padStart(2, '0')}
+                      {isGame ? 'SPECIAL GAME' : card.kind === 'passage' ? 'PASSAGE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
                     </span>
                     {onEdit && (
                       <Button
@@ -428,23 +433,16 @@ export default function Study({
                       </Button>
                     )}
                   </div>
-                  <div className={['note','passage','classification'].includes(card.kind) ? 'note-study-content' : 'sheet-content'} key={card.id}>
-                    <h1 style={['note','passage','classification'].includes(card.kind) ? undefined : { textAlign: card.align || 'center' }}>{card.title}</h1>
+                  <div className={wide ? 'note-study-content' : 'sheet-content'} key={card.id}>
+                    <h1 style={wide ? undefined : { textAlign }}>{card.title}</h1>
                     {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
-                    ) : ['note','passage','classification'].includes(card.kind) ? (
-                      <NoteStudy
-                        body={card.body}
-                        revealed={revealed}
-                        onToggle={toggle}
-                        focusIds={focusIds}
-                        wrongIds={new Set(wrongMasks[card.id] || [])}
-                        onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
-                      />
+                    ) : card.kind === 'occlusion' ? (
+                      <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={toggle} focusIds={focusIds} />
                     ) : (
                       <MaskedText
                         body={card.body}
-                        align={card.align}
+                        align={textAlign}
                         revealed={revealed}
                         onToggle={toggle}
                         focusIds={focusIds}
@@ -515,7 +513,7 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    {!['note', 'matching', 'classification'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
+                    {!['matching', 'classification'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />
@@ -535,7 +533,7 @@ export default function Study({
       )}
         </div>
       </div>
-      {petProps && <StudyPet {...petProps} />}
+      {petProps && <StudyPets {...petProps} />}
     </main>
   )
 }

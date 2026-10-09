@@ -8,7 +8,7 @@ export default function MatchingEditor({ draft, deckName, onChange, onSave, onEx
   const error = matchingError(card.body)
   return <main id="main" className="editor-page">
     <div className="editor-top"><Button variant="ghost" onClick={onExit}>← 돌아가기</Button>
-      <span className="save-state">{autosaved ? '작성 내용 임시 저장됨' : '작성 중'}</span></div>
+      <span className="save-state">{autosaved}</span></div>
     <div className="section-heading"><div><p className="overline">{deckName}</p><h1>스페셜 매칭 게임 수정</h1></div></div>
     <form className="editor-layout" onSubmit={(e) => { e.preventDefault(); if (!error && card.title.trim()) onSave() }}>
       <div className="editor-panel">

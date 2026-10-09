@@ -1,9 +1,11 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookOpen,
   Check,
   ChevronDown,
+  CheckSquare,
+  FolderInput,
   Download,
   FileUp,
   GripVertical,
@@ -21,6 +23,7 @@ import {
 import { Button } from './ui/button'
 import { masksIn, plainText } from '../lib/masks'
 import { classificationData } from '../lib/classification'
+import { occlusionMasks } from '../lib/occlusion'
 import { markdownExcerpt } from '../lib/markdown'
 
 export default function Library({
@@ -31,8 +34,6 @@ export default function Library({
   onDeck,
   onStudy,
   onAdd,
-  onNote,
-  onPassage,
   onEdit,
   onDelete,
   onCreateDeck,
@@ -49,6 +50,7 @@ export default function Library({
   onOfflineSave,
   onOfflineRemove,
   onMove,
+  onTransfer,
 }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -59,7 +61,37 @@ export default function Library({
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   )
-  const canReorder = deck.canEdit && !offline && filter === 'all' && !search.trim()
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [targetId, setTargetId] = useState('')
+  const [transferring, setTransferring] = useState(false)
+  const targets = decks.filter((item) => item.canEdit && item.id !== deck.id)
+  const canTransfer = !!onTransfer && deck.canEdit && !offline && targets.length > 0
+  useEffect(() => {
+    setSelecting(false)
+    setSelected(new Set())
+    setTargetId('')
+  }, [deck.id])
+  // Drop selections for cards that disappeared after a refresh.
+  const selectedIds = deck.cards.filter((card) => selected.has(card.id)).map((card) => card.id)
+  const allFilteredSelected = filtered.length > 0 && filtered.every((card) => selected.has(card.id))
+  const toggleSelected = (id) => setSelected((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const endSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
+  const transfer = async () => {
+    if (!selectedIds.length || !targets.some((item) => item.id === targetId)) return
+    setTransferring(true)
+    const moved = await onTransfer(selectedIds, targetId)
+    setTransferring(false)
+    if (moved) endSelecting()
+  }
+  const canReorder = deck.canEdit && !offline && !selecting && filter === 'all' && !search.trim()
   const list = useRef(null)
   const [drag, setDrag] = useState(null)
   const startDrag = (e, card, index) => {
@@ -92,7 +124,8 @@ export default function Library({
   const known = deck.cards.filter((c) => ratings[c.id] === 'known').length
   const again = deck.cards.filter((c) => ratings[c.id] === 'again').length
   const publicDecks = decks.filter((item) => item.visibility === 'public')
-  const privateDecks = decks.filter((item) => item.visibility === 'private')
+  const privateDecks = decks.filter((item) => item.visibility === 'private' && !item.adminView)
+  const adminDecks = decks.filter((item) => item.adminView)
   const deckButton = (item) => (
     <button
       key={item.id}
@@ -106,7 +139,7 @@ export default function Library({
     >
       {item.visibility === 'public' ? <Globe2 size={17} /> : <LockKeyhole size={17} />}
       <span>{item.name}</span>
-      <small>{item.cards.length}</small>
+      <small>{item.cardCount ?? item.cards.length}</small>
     </button>
   )
   return (
@@ -123,18 +156,14 @@ export default function Library({
           <Button variant="outline" onClick={onImport} disabled={offline}>
             <FileUp size={17} /> 불러오기
           </Button>
-          <Button variant="outline" onClick={onAdd} disabled={offline || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
-            <Plus size={17} /> 한 장 만들기
-          </Button>
-          <Button variant="outline" onClick={onPassage} disabled={offline || deck.cards.length >= 1000}><BookOpen size={17}/> 본문 추가</Button>
-          <Button onClick={onNote} disabled={offline || deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
-            <BookOpen size={17} /> 노트 추가
+          <Button onClick={onAdd} disabled={offline || deck.cards.length >= 1000 || (!!user && !deck.canEdit && decks.some((item) => item.canEdit))}>
+            <Plus size={17} /> 새 카드
           </Button>
         </div>
       </div>
       <div className="library-summary" aria-label="카드 라이브러리 현황">
         <div><span className="summary-icon"><Layers3 size={19} /></span><span><strong>{decks.length}</strong><small>카드 셋</small></span></div>
-        <div><span className="summary-icon"><BookOpen size={19} /></span><span><strong>{decks.reduce((sum, item) => sum + item.cards.length, 0)}</strong><small>학습 카드</small></span></div>
+        <div><span className="summary-icon"><BookOpen size={19} /></span><span><strong>{decks.filter((item) => !item.adminView).reduce((sum, item) => sum + item.cards.length, 0)}</strong><small>학습 카드</small></span></div>
         <div><span className="summary-icon"><Globe2 size={19} /></span><span><strong>{publicDecks.length}</strong><small>함께 쓰는 공개 셋</small></span></div>
       </div>
       <div className="library-layout">
@@ -158,6 +187,8 @@ export default function Library({
             {publicDecks.map(deckButton)}
             {!!privateDecks.length && <p className="deck-group-label">내 비공개 카드 셋</p>}
             {privateDecks.map(deckButton)}
+            {!!adminDecks.length && <p className="deck-group-label">다른 사용자 비공개 셋 · 관리자</p>}
+            {adminDecks.map(deckButton)}
           </div>
           <div className="mobile-decks">
             <select
@@ -176,6 +207,9 @@ export default function Library({
               {user && <optgroup label="내 비공개 카드 셋">
                 {privateDecks.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.cards.length}장</option>)}
               </optgroup>}
+              {!!adminDecks.length && <optgroup label="다른 사용자 비공개 셋 · 관리자">
+                {adminDecks.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.ownerName} · {d.cardCount}장</option>)}
+              </optgroup>}
             </select>
             <ChevronDown size={15} />
           </div>
@@ -193,7 +227,7 @@ export default function Library({
         <section className="collection-panel">
           <div className="collection-heading">
             <div>
-              <p className="collection-kicker">{deck.visibility === 'public' ? <Globe2 size={12} /> : <LockKeyhole size={12} />}{deck.visibility === 'public' ? '함께 쓰는 카드 셋' : '나만의 카드 셋'}</p>
+              <p className="collection-kicker">{deck.visibility === 'public' ? <Globe2 size={12} /> : <LockKeyhole size={12} />}{deck.visibility === 'public' ? '함께 쓰는 카드 셋' : deck.adminView ? '다른 사용자의 비공개 셋 · 관리자 읽기 전용' : '나만의 카드 셋'}</p>
               <h2>
                 {deck.name}
                 {deck.canEdit && (
@@ -291,8 +325,40 @@ export default function Library({
                 다시 볼 카드 <span>{again}</span>
               </button>
             </div>
-            <span>{filtered.length}장</span>
+            <span className="collection-count">
+              {filtered.length}장
+              {canTransfer && deck.cards.length > 0 && (
+                <Button variant={selecting ? 'outline' : 'ghost'} size="sm" aria-pressed={selecting} onClick={() => selecting ? endSelecting() : setSelecting(true)}>
+                  <CheckSquare size={15} /> {selecting ? '선택 끝내기' : '여러 장 옮기기'}
+                </Button>
+              )}
+            </span>
           </div>
+          {selecting && (
+            <div className="selection-bar" role="region" aria-label="선택한 카드 옮기기">
+              <label className="selection-all">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  disabled={!filtered.length}
+                  onChange={() => setSelected((prev) => {
+                    const next = new Set(prev)
+                    filtered.forEach((card) => allFilteredSelected ? next.delete(card.id) : next.add(card.id))
+                    return next
+                  })}
+                />
+                {search.trim() || filter !== 'all' ? '보이는 카드 모두' : '모두 선택'}
+              </label>
+              <span className="selection-count" aria-live="polite">{selectedIds.length}장 선택</span>
+              <select aria-label="옮길 카드 셋" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+                <option value="">옮길 카드 셋 선택</option>
+                {targets.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.cards.length}장</option>)}
+              </select>
+              <Button size="sm" disabled={!selectedIds.length || !targetId || transferring} onClick={transfer}>
+                <FolderInput size={15} /> {transferring ? '옮기는 중…' : '옮기기'}
+              </Button>
+            </div>
+          )}
           {!filtered.length ? (
             <div className="empty-state collection-empty">
               <BookOpen size={30} strokeWidth={1.4} />
@@ -317,8 +383,8 @@ export default function Library({
               ) : (
                 filter === 'all' && (
                   !offline && (deck.canEdit || !decks.length) && (
-                    <Button onClick={onPassage}>
-                      <BookOpen size={16} /> {deck.canEdit ? '본문 추가' : '로그인'}
+                    <Button onClick={onAdd}>
+                      <Plus size={16} /> {deck.canEdit ? '새 카드' : '로그인'}
                     </Button>
                   )
                 )
@@ -329,27 +395,29 @@ export default function Library({
               {filtered.map((card, index) => (
                 <li
                   key={card.id}
-                  className={drag ? [
+                  className={selecting ? `selectable${selected.has(card.id) ? ' selected' : ''}` : drag ? [
                     drag.id === card.id && 'dragging',
                     drag.over === index && drag.over !== drag.from && (drag.over > drag.from ? 'drop-after' : 'drop-before'),
                   ].filter(Boolean).join(' ') : undefined}
                 >
                   <button
                     className="card-row-main"
-                    onClick={() => onStudy(card.id)}
+                    aria-pressed={selecting ? selected.has(card.id) : undefined}
+                    onClick={() => selecting ? toggleSelected(card.id) : onStudy(card.id)}
                   >
                     <span className="card-number">
-                      {String(index + 1).padStart(2, '0')}
+                      {selecting
+                        ? <span className={`select-box${selected.has(card.id) ? ' checked' : ''}`} aria-hidden="true">{selected.has(card.id) && <Check size={13} />}</span>
+                        : String(index + 1).padStart(2, '0')}
                     </span>
                     <span className="card-row-content">
                       <strong>{card.title}</strong>
                       <span className="card-excerpt">
-                        {card.kind === 'classification' ? (()=>{try{return `화석 사진 ${classificationData(card.body).items.length}개 · 무작위 시대 분류`}catch{return '사진 분류 게임'}})() : markdownExcerpt(card.body)}
+                        {card.kind === 'occlusion' ? `사진 가리개 ${occlusionMasks(card.body).length}개` : card.kind === 'classification' ? (()=>{try{return `화석 사진 ${classificationData(card.body).items.length}개 · 무작위 시대 분류`}catch{return '사진 분류 게임'}})() : markdownExcerpt(card.body)}
                       </span>
                       <span className="card-meta">
                         {card.kind === 'passage' && <span className="note-kind"><BookOpen size={12}/> 본문 · 하이라이트 {card.highlights?.length || 0}개</span>}
-                        {card.kind === 'note' && <span className="note-kind"><BookOpen size={12} /> 노트</span>}
-                        {card.kind === 'classification' ? <span className="note-kind">사진 분류 게임</span> : card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
+                        {card.kind === 'occlusion' ? <span className="note-kind">사진 가리개 카드</span> : card.kind === 'classification' ? <span className="note-kind">사진 분류 게임</span> : card.kind === 'matching' ? <span className="note-kind">스페셜 매칭 게임</span> : <>빈칸 {masksIn(card.body).length}개</>}
                         {ratings[card.id] && (
                           <span className={`status-label ${ratings[card.id]}`}>
                             {ratings[card.id] === 'known' ? (
@@ -365,7 +433,7 @@ export default function Library({
                       </span>
                     </span>
                   </button>
-                  {deck.canEdit && <div className="card-row-actions">
+                  {deck.canEdit && !selecting && <div className="card-row-actions">
                     {canReorder && (
                       <Button
                         variant="ghost"
@@ -415,7 +483,7 @@ export default function Library({
                   : '공개된 카드 셋을 기다려 주세요.'
                 : deck.visibility === 'public'
                   ? '익명 사용자도 편집할 수 있어요. 모든 수정은 버전 기록에 저장돼요.'
-                  : '비공개 셋은 소유자만 볼 수 있어요.'}
+                  : deck.adminView ? '관리자 읽기 전용 화면이에요. 열람 기록이 활동 로그에 남아요.' : '비공개 셋은 소유자와 서버 관리자만 볼 수 있어요.'}
             </span>
             {deck.canManage && (
               <Button

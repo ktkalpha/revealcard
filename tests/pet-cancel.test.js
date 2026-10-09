@@ -10,20 +10,21 @@ test('cancelling queued or running jobs prevents claims and late results, permit
  const dir=await mkdtemp(join(tmpdir(),'pet-cancel-'))
  try{
   const pets=createPets(dir)
-  await pets.reference('one',png);await pets.reference('two',png)
-  const first=await pets.generate('one')
+  const one=(await pets.create('one')).created,two=(await pets.create('two')).created
+  await pets.reference('one',one,png);await pets.reference('two',two,png)
+  const first=(await pets.generate('one',one)).pets[0]
   await assert.rejects(pets.cancel('two',first.job.id),{status:404})
-  assert.equal((await pets.cancel('one',first.job.id)).job.status,'cancelled')
+  assert.equal((await pets.cancel('one',first.job.id)).pets[0].job.status,'cancelled')
   assert.equal(await pets.claim(),null)
-  const retry=await pets.generate('one');assert.notEqual(retry.job.id,first.job.id)
+  const retry=(await pets.generate('one',one)).pets[0];assert.notEqual(retry.job.id,first.job.id)
   await assert.rejects(pets.cancel('one',first.job.id),{status:404})
   const claimed=await pets.claim();assert.equal(await pets.active(claimed.id,claimed.claim),true)
   await pets.cancel('one',claimed.id)
   assert.equal(await pets.active(claimed.id,claimed.claim),false)
   await assert.rejects(pets.finish(claimed.id,claimed.claim,png),{status:409})
   await pets.fail(claimed.id,claimed.claim)
-  assert.equal((await pets.get('one')).job.status,'cancelled')
-  assert.equal((await pets.get('one')).pet.sheet,'')
+  assert.equal((await pets.get('one')).pets[0].job.status,'cancelled')
+  assert.equal((await pets.get('one')).pets[0].sheet,'')
  }finally{await rm(dir,{recursive:true,force:true})}
 })
 test('worker abort terminates its running command, including commands that ignore SIGTERM',async()=>{

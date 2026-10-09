@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, Check, FlaskConical, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
+import { BookOpen, Check, FlaskConical, ShieldCheck, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
 import Editor from './components/Editor'
-import NoteEditor from './components/NoteEditor'
 import PassageEditor from './components/PassageEditor'
 import PassageCards from './components/PassageCards'
-const editorView = kind => kind === 'passage' ? 'passage' : kind === 'note' ? 'note' : 'edit'
+// Passage cards made before the merge keep their highlight editor; everything else uses one editor.
+const editorView = kind => kind === 'passage' ? 'passage' : 'edit'
+const EDITOR_VIEWS = ['edit', 'passage']
 import ThemeDialog from './components/ThemeDialog'
 import ExperimentsDialog from './components/ExperimentsDialog'
+import AdminDialog from './components/AdminDialog'
 import usePet from './lib/usePet'
 import { applyTheme, loadTheme, THEME_KEY } from './lib/theme'
 import HistoryDialog from './components/HistoryDialog'
@@ -19,6 +21,7 @@ import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
 import { api } from './lib/api'
+import { cardSaveError, isBlankCard, saveLabel } from './lib/autosave'
 import { emptyProgress, applyProgress } from './lib/progress'
 import { offlineDecks, rememberedUser, rememberUser, removeOfflineDeck, saveOfflineDeck } from './lib/offline'
 import {
@@ -301,6 +304,23 @@ function App() {
       notify('기기 저장 내용을 삭제하지 못했어요.')
     }
   }
+  // Admin read-only sets arrive without cards; fetch them (logged on the server) when opened.
+  const adminCards = useRef(new Map())
+  useEffect(() => {
+    if (!deck?.adminView || deck.loaded || offline) return
+    const cached = adminCards.current.get(deck.id)
+    const fill = (loaded) => setLibrary((prev) => ({
+      ...prev,
+      decks: prev.decks.map((item) => item.id === loaded.id && item.version === loaded.version ? { ...item, cards: loaded.cards, loaded: true } : item),
+    }))
+    if (cached?.version === deck.version) return fill(cached)
+    let ignore = false
+    api(`/api/admin/decks/${deck.id}`).then((loaded) => {
+      adminCards.current.set(loaded.id, loaded)
+      if (!ignore) fill(loaded)
+    }).catch((error) => { if (!ignore) notify(error.message) })
+    return () => { ignore = true }
+  }, [deck?.id, deck?.version, deck?.loaded, offline])
   const selectDeck = (id) =>
     setLibrary((prev) => ({ ...prev, selectedDeckId: id }))
   const study = (cardId) => {
@@ -328,7 +348,8 @@ function App() {
       deckId: deck.id,
       baseVersion: deck.version,
       isNew: !card,
-      card: card ? { ...card } : { id: uid(), title: '', body: '', ...(['note','passage'].includes(kind) ? { kind } : {}) },
+      card: card ? { ...card } : { id: uid(), title: '', body: '' },
+      ...(card ? { serverId: card.id, base: JSON.stringify(card) } : {}),
     }
     if (
       draft &&
@@ -338,38 +359,132 @@ function App() {
       setModal({ type: 'draft', next })
       return
     }
-    setDraft(draft && card && draft.card.id === card.id ? draft : next)
+    const resumed = draft && card && draft.card.id === card.id
+    if (!resumed) lastSaved.current = JSON.stringify([next.deckId, next.card])
+    setDraft(resumed ? draft : next)
     setView(editorView(card?.kind || kind))
   }
   const openEditor = (card) => openDraft(card, 'card')
-  const openNote = () => openDraft(null, 'note')
-  const openPassage = () => openDraft(null, 'passage')
+  // Autosave: drafts go to the server shortly after typing stops and immediately
+  // when the editor is left. The localStorage copy above stays as a fallback.
+  const [saveState, setSaveState] = useState('idle')
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const libraryRef = useRef(library)
+  libraryRef.current = library
+  const lastSaved = useRef(null)
+  const saving = useRef(Promise.resolve())
+  const persistDraft = ({ keepalive = false } = {}) => {
+    const job = saving.current.then(() => persistNow(keepalive))
+    saving.current = job.catch(() => {})
+    return job
+  }
+  const persistNow = async (keepalive) => {
+    const current = draftRef.current
+    if (!current) return ''
+    const signature = JSON.stringify([current.deckId, current.card])
+    if (lastSaved.current === signature) return ''
+    const error = cardSaveError(current.card)
+    if (error) { setSaveState('invalid'); return error }
+    if (offline) { setSaveState('offline'); return '오프라인에서는 서버에 저장할 수 없어요. 이 기기에 임시 보관 중이에요.' }
+    const target = libraryRef.current.decks.find((d) => d.id === current.deckId)
+    if (!target?.canEdit) { setSaveState('error'); return '이 카드 셋을 수정할 수 없어요.' }
+    const serverId = current.serverId || (target.cards.some((c) => c.id === current.card.id) ? current.card.id : null)
+    if (!serverId && target.cards.length >= 1000) { setSaveState('error'); return '카드 셋이 가득 찼어요. 다른 셋에 저장해 주세요.' }
+    const card = { ...current.card, title: current.card.title.trim() }
+    const send = (baseVersion) => api(`/api/decks/${target.id}/cards${serverId ? `/${serverId}` : ''}`, {
+      method: serverId ? 'PUT' : 'POST', keepalive,
+      body: serverId ? { ...card, id: serverId, baseVersion } : { cards: [card], baseVersion },
+    })
+    setSaveState('saving')
+    let result
+    try {
+      try {
+        result = await send(current.baseVersion)
+      } catch (failure) {
+        if (failure.status !== 409) throw failure
+        // Someone saved another card in this set. Retry only if this card itself is unchanged.
+        const latest = (await api('/api/bootstrap')).decks.find((d) => d.id === target.id)
+        const onServer = serverId && latest?.cards.find((c) => c.id === serverId)
+        if (!latest || (serverId && (!onServer || JSON.stringify(onServer) !== current.base)))
+          throw new Error('다른 곳에서 이 카드가 바뀌었어요. 작성 내용은 이 기기에 보관돼 있어요.')
+        result = await send(latest.version)
+      }
+    } catch (failure) {
+      setSaveState('error')
+      return failure.message
+    }
+    const stored = result.cards?.[0]
+    lastSaved.current = signature
+    setDraft((prev) => prev && prev.card.id === current.card.id
+      ? { ...prev, baseVersion: result.version, serverId: stored?.id || serverId, base: JSON.stringify(stored), isNew: false }
+      : prev)
+    setLibrary((prev) => ({
+      ...prev,
+      decks: prev.decks.map((d) => d.id !== target.id ? d : {
+        ...d,
+        version: result.version,
+        cards: serverId ? d.cards.map((c) => c.id === serverId ? stored : c) : [...d.cards, stored],
+      }),
+    }))
+    setSaveState('saved')
+    return ''
+  }
+  const closeDraft = async ({ quiet = false } = {}) => {
+    const current = draftRef.current
+    if (!current) return true
+    if (isBlankCard(current.card) && !current.serverId) {
+      setDraft(null)
+      return true
+    }
+    const error = await persistDraft()
+    if (error) {
+      if (!quiet) notify(error)
+      return false
+    }
+    setDraft((prev) => prev?.card.id === current.card.id ? null : prev)
+    lastSaved.current = null
+    setSaveState('idle')
+    return true
+  }
+  useEffect(() => {
+    if (!draft || !EDITOR_VIEWS.includes(view)) return
+    if (lastSaved.current === JSON.stringify([draft.deckId, draft.card])) return
+    setSaveState(cardSaveError(draft.card) ? 'invalid' : 'pending')
+    const timer = setTimeout(() => persistDraft(), 1500)
+    return () => clearTimeout(timer)
+  }, [draft?.card, draft?.deckId, view])
+  // Leaving the editor anywhere in the site saves right away.
+  const previousView = useRef(view)
+  useEffect(() => {
+    const left = EDITOR_VIEWS.includes(previousView.current) && !EDITOR_VIEWS.includes(view)
+    previousView.current = view
+    if (!left || !draftRef.current) return
+    const { card, deckId } = draftRef.current
+    const unsaved = lastSaved.current !== JSON.stringify([deckId, card])
+    closeDraft().then((closed) => {
+      if (closed && unsaved && card.title.trim()) notify(`‘${card.title.trim()}’을 저장했어요.`)
+    })
+  }, [view])
+  useEffect(() => {
+    const onHide = (event) => {
+      if (event.type === 'pagehide' || document.visibilityState === 'hidden') persistDraft({ keepalive: true })
+    }
+    window.addEventListener('pagehide', onHide)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', onHide)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  })
+  const draftLabel = draft && draft.serverId && lastSaved.current === JSON.stringify([draft.deckId, draft.card])
+    ? '저장됨' : saveLabel(saveState, draft?.card)
   const saveDraft = async () => {
-    const target = library.decks.find((d) => d.id === draft.deckId)
-    if (!target?.canEdit) {
-      notify('이 카드 셋을 수정할 수 없어요.')
-      return
-    }
-    if (
-      !target.cards.some((c) => c.id === draft.card.id) &&
-      target.cards.length >= 1000
-    ) {
-      notify('카드 셋이 가득 찼어요. 다른 셋에 저장해 주세요.')
-      return
-    }
-    const saved = { ...draft.card, title: draft.card.title.trim() }
-    const existing = target.cards.some((card) => card.id === saved.id)
-    const result = await run(
-      () => api(
-        `/api/decks/${target.id}/cards${existing ? `/${saved.id}` : ''}`,
-        { method: existing ? 'PUT' : 'POST', body: existing ? { ...saved, baseVersion: draft.baseVersion } : { cards: [saved], baseVersion: draft.baseVersion } },
-      ),
-      target.id,
-    )
-    if (!result) return
-    setDraft(null)
+    const current = draftRef.current
+    if (!current || !await closeDraft()) return
+    previousView.current = 'library'
     setView('library')
-    notify(saved.kind === 'passage' ? '본문을 저장했어요.' : saved.kind === 'note' ? '노트를 저장했어요.' : '카드를 저장했어요.')
+    notify('카드를 저장했어요.')
   }
   const deleteCard = async (card) => {
     const targetId = deck.id,
@@ -394,6 +509,15 @@ function App() {
     await run(() => api(`/api/decks/${targetId}/cards/${card.id}/move`, {
       method: 'POST', body: { index, baseVersion: deck.version },
     }), targetId)
+  }
+  const transferCards = async (cardIds, targetId) => {
+    const source = deck, target = library.decks.find((item) => item.id === targetId)
+    if (!cardIds.length || !target?.canEdit || target.id === source.id) return false
+    const result = await run(() => api(`/api/decks/${source.id}/cards/transfer`, {
+      method: 'POST', body: { cardIds, targetId, baseVersion: source.version, targetVersion: target.version },
+    }), source.id)
+    if (result) notify(`카드 ${cardIds.length}장을 ‘${target.name}’(으)로 옮겼어요.`)
+    return !!result
   }
   const deleteDeck = async () => {
     const deleted = deck
@@ -513,6 +637,11 @@ function App() {
           <button className={`nav-link ${modal?.type === 'experiments' ? 'active' : ''}`} onClick={() => setModal({ type: 'experiments' })}>
             <FlaskConical size={16} /> 실험실 <small className="labs-badge">BETA</small>
           </button>
+          {user?.admin && !offline && (
+            <button className={`nav-link ${modal?.type === 'admin' ? 'active' : ''}`} onClick={() => setModal({ type: 'admin' })}>
+              <ShieldCheck size={16} /> 관리자
+            </button>
+          )}
         </nav>
         <div className="workspace-decks">
           <p className="rail-label">카드 셋 <span>{library.decks.length}</span></p>
@@ -563,7 +692,7 @@ function App() {
                 if (offline) notify('로그인하려면 서버에 연결해 주세요.')
                 else setModal({ type: 'auth' })
               }
-              else if (await run(() => api('/api/logout', { method: 'POST' }))) {
+              else if ((await closeDraft({ quiet: true }), await run(() => api('/api/logout', { method: 'POST' })))) {
                 setView('library')
                 setDraft(null)
               }
@@ -582,9 +711,9 @@ function App() {
           </Button>
         </div>
       )}
-      {draft && view !== 'edit' && view !== 'note' && view !== 'passage' && (
+      {draft && !EDITOR_VIEWS.includes(view) && (
         <div className="draft-banner">
-          <span>작성 중인 {draft.card.kind === 'passage' ? '본문' : draft.card.kind === 'note' ? '노트' : '카드'}가 있어요.</span>
+          <span>작성 중인 카드가 있어요.</span>
           <button
             onClick={() => {
               selectDeck(
@@ -625,7 +754,7 @@ function App() {
           modalOpen={!!modal}
           onHighlight={highlight => setModal({type:'passage-cards',highlight})}
           companion={user ? companion : null}
-          onPetSettings={() => setModal({ type: 'experiments' })}
+          onPetSettings={(petId) => setModal({ type: 'experiments', petId })}
         />
       )}
       {view === 'library' && (
@@ -637,11 +766,10 @@ function App() {
           onDeck={selectDeck}
           onStudy={study}
           onAdd={() => openEditor()}
-          onNote={openNote}
-          onPassage={openPassage}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
           onMove={moveCard}
+          onTransfer={offline ? null : transferCards}
           onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
           onRenameDeck={() => deck.canEdit && setModal({ type: 'rename' })}
           onDeleteDeck={() => deck.canManage && setModal({ type: 'delete-deck' })}
@@ -671,26 +799,11 @@ function App() {
               setDraft(null)
             setView('library')
           }}
-          autosaved={autosaved}
+          autosaved={draftLabel}
         />
       )}
-      {view === 'passage' && draft && <PassageEditor key={draft.card.id} draft={draft} deckName={deck.name} onChange={card => setDraft(prev => ({...prev,card}))} onSave={saveDraft} onExit={() => setView('library')} autosaved={autosaved}/>}
+      {view === 'passage' && draft && <PassageEditor key={draft.card.id} draft={draft} deckName={deck.name} onChange={card => setDraft(prev => ({...prev,card}))} onSave={saveDraft} onExit={() => setView('library')} autosaved={draftLabel}/>}
       {modal?.type === 'passage-cards' && <PassageCards highlight={modal.highlight} onClose={() => setModal(null)}/>}
-      {view === 'note' && draft && (
-        <NoteEditor
-          key={draft.card.id}
-          draft={draft}
-          deckName={library.decks.find((d) => d.id === draft.deckId)?.name || deck.name}
-          onChange={(card) => setDraft((prev) => ({ ...prev, card }))}
-          onSave={saveDraft}
-          onExit={() => {
-            if (!draft.card.title.trim() && !draft.card.body.trim())
-              setDraft(null)
-            setView('library')
-          }}
-          autosaved={autosaved}
-        />
-      )}
       <input
         ref={fileInput}
         type="file"
@@ -704,7 +817,8 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
-      {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} ready={companion.ready} pet={companion.pet} onUpdate={companion.update} error={companion.error} job={companion.job} workerOnline={companion.workerOnline} onUpload={companion.upload} onGenerate={companion.generate} onCancel={companion.cancel} onClose={() => setModal(null)} />}
+      {modal?.type === 'admin' && <AdminDialog onClose={() => setModal(null)} />}
+      {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} companion={companion} initialPetId={modal.petId} onClose={() => setModal(null)} />}
       {modal?.type === 'theme' && <ThemeDialog theme={theme} onChange={setTheme} storageError={themeStorageError} onClose={() => setModal(null)} />}
       {modal?.type === 'history' && <HistoryDialog deck={deck} offline={offline} onClose={() => setModal(null)} onRestore={async (version, baseVersion) => {
         const result = await run(() => api(`/api/decks/${deck.id}/restore`, { method: 'POST', body: { version, baseVersion } }), deck.id)
@@ -784,7 +898,7 @@ function App() {
         </Modal>
       )}
       {modal?.type === 'draft' && (
-        <Modal title={`작성 중인 ${draft.card.kind === 'passage' ? '본문' : draft.card.kind === 'note' ? '노트' : '카드'}가 있어요`} onClose={() => setModal(null)}>
+        <Modal title="작성 중인 카드가 있어요" onClose={() => setModal(null)}>
           <p className="modal-description">
             ‘{draft.card.title || '제목 없음'}’을 이어서 작성할 수 있어요.
           </p>

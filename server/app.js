@@ -5,12 +5,14 @@ import { dirname, extname, resolve, sep } from 'node:path'
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { classificationError } from '../src/lib/classification.js'
+import { occlusionError } from '../src/lib/occlusion.js'
 import { matchingError } from '../src/lib/matching.js'
 import { passageError, passageData } from '../src/lib/passage.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
 import { createPets } from './pets.js'
 import { createImages } from './images.js'
+import { createActivity } from './activity.js'
 
 const hashPassword = promisify(scrypt)
 const MAX_BODY = 25 * 1024 * 1024
@@ -57,7 +59,7 @@ const send = (res, status, value, headers = {}) => {
   res.end(JSON.stringify(value))
 }
 const userView = (user) =>
-  user && { id: user.id, username: user.username, migrated: !!user.migrated }
+  user && { id: user.id, username: user.username, migrated: !!user.migrated, ...(user.admin ? { admin: true } : {}) }
 const cardInput = (card) => {
   if (
     !card ||
@@ -67,10 +69,10 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
-    (card.kind !== undefined && !['note', 'matching', 'passage', 'classification'].includes(card.kind)) ||
+    (card.kind !== undefined && !['note', 'matching', 'passage', 'classification', 'occlusion'].includes(card.kind)) ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
-    (card.kind === 'classification' ? classificationError(card.body) : card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
+    (card.kind === 'classification' ? classificationError(card.body) : card.kind === 'occlusion' ? occlusionError(card.body) : card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
     (card.kind === 'passage' && passageError(card))
   )
     fail(400, '카드 제목, 내용 또는 빈칸 표시를 확인해 주세요.')
@@ -78,7 +80,7 @@ const cardInput = (card) => {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
-    ...(['note', 'matching', 'passage', 'classification'].includes(card.kind) ? { kind: card.kind } : {}),
+    ...(['note', 'matching', 'passage', 'classification', 'occlusion'].includes(card.kind) ? { kind: card.kind } : {}),
     ...(card.align ? { align: card.align } : {}),
     ...(card.kind === 'passage' ? passageData(card) : {}),
   }
@@ -119,16 +121,27 @@ const finishEdit = (data, deck, user, action) => {
   deck.version = (deck.version || 0) + 1
   data.revisions[deck.id].push(snapshot(deck, user, action))
 }
-const visibleDecks = (data, user) =>
-  data.decks
+const ownerName = (data, deck) => data.users.find((owner) => owner.id === deck.ownerId)?.username
+const visibleDecks = (data, user) => [
+  ...data.decks
     .filter((deck) => deck.visibility === 'public' || deck.ownerId === user?.id)
     .map((deck) => ({
       ...deck,
-      ownerName: data.users.find((owner) => owner.id === deck.ownerId)?.username,
+      ownerName: ownerName(data, deck),
       canEdit: deck.visibility === 'public' || deck.ownerId === user?.id,
       canManage: deck.ownerId === user?.id,
       version: deck.version || 0,
-    }))
+    })),
+  // Admins see other users' private sets listed without cards; opening one goes
+  // through /api/admin/decks/:id so every read is written to the activity log.
+  ...(user?.admin ? data.decks
+    .filter((deck) => deck.visibility !== 'public' && deck.ownerId !== user.id)
+    .map((deck) => ({
+      id: deck.id, name: deck.name, visibility: deck.visibility, ownerName: ownerName(data, deck),
+      cards: [], cardCount: deck.cards.length, adminView: true,
+      canEdit: false, canManage: false, version: deck.version || 0,
+    })) : []),
+]
 
 async function jsonBody(req) {
   if (!req.headers['content-type']?.startsWith('application/json'))
@@ -154,6 +167,7 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
   const store = await createStore(dataFile)
   const pets = createPets(resolve(dirname(dataFile), 'pets'))
   const images = createImages(resolve(dirname(dataFile), 'images'))
+  const activity = await createActivity(resolve(dirname(dataFile), 'activity.log'))
   // Only token hashes are persisted; the bearer token stays in the HttpOnly cookie.
   if (Object.values(store.read().sessions || {}).some(session => !liveSession(session)))
     await store.change(pruneSessions)
@@ -207,9 +221,56 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
       const token = /(?:^|;\s*)rc_session=([^;]+)/.exec(req.headers.cookie || '')?.[1]
       const key = sessionKey(token)
       const session = key ? store.read().sessions?.[key] : null
-      const user = liveSession(session)
+      const sessionUser = liveSession(session)
         ? store.read().users.find((item) => item.id === session.userId)
         : null
+      // Kicked accounts lose their sessions, but checking here also covers a race with an open request.
+      const user = sessionUser?.banned ? null : sessionUser
+      // Behind the Cloudflare tunnel every request arrives from loopback.
+      const remote = req.socket.remoteAddress || ''
+      const ip = (/^(?:::ffff:)?127\.|^::1$/.test(remote) && req.headers['cf-connecting-ip']) || remote
+      const record = (action, extra = {}) => activity.record({ action, username: user?.username || null, ip, ...extra })
+      if (!path.startsWith('/api/images/')) activity.touch(user, ip, path)
+      if (path.startsWith('/api/admin/decks/') && req.method === 'GET') {
+        if (!user?.admin) fail(403, '관리자만 볼 수 있어요.')
+        const deck = store.read().decks.find((item) => item.id === path.slice('/api/admin/decks/'.length))
+        if (!deck) fail(404, '카드 셋을 찾을 수 없어요.')
+        if (deck.visibility !== 'public' && deck.ownerId !== user.id)
+          record('admin-view-deck', { deckId: deck.id, deck: deck.name, owner: ownerName(store.read(), deck) })
+        send(res, 200, { id: deck.id, version: deck.version || 0, cards: deck.cards })
+        return
+      }
+      if (path === '/api/admin/activity' && req.method === 'GET') {
+        if (!user?.admin) fail(403, '관리자만 볼 수 있어요.')
+        const limit = Math.min(2000, Math.max(1, Number(url.searchParams.get('limit')) || 500))
+        send(res, 200, activity.snapshot(store.read().users, limit))
+        return
+      }
+      const kick = /^\/api\/admin\/users\/([^/]+)\/(kick|unban)$/.exec(path)
+      if (kick && req.method === 'POST') {
+        if (!user?.admin) fail(403, '관리자만 할 수 있어요.')
+        const username = decodeURIComponent(kick[1])
+        const banned = kick[2] === 'kick'
+        await store.change((data) => {
+          const target = data.users.find((item) => item.username === username)
+          if (!target) fail(404, '계정을 찾을 수 없어요.')
+          if (target.admin) fail(400, '관리자 계정은 강퇴할 수 없어요.')
+          if (banned) {
+            target.banned = true
+            target.bannedAt = new Date().toISOString()
+            data.sessions ||= {}
+            for (const [sessionId, item] of Object.entries(data.sessions))
+              if (item.userId === target.id) delete data.sessions[sessionId]
+          } else {
+            delete target.banned
+            delete target.bannedAt
+          }
+        })
+        if (banned) activity.forget(username)
+        record(banned ? 'admin-kick' : 'admin-unban', { target: username })
+        send(res, 200, activity.snapshot(store.read().users, 1000))
+        return
+      }
       if (path === '/api/pet' || path.startsWith('/api/pet/')) {
         if (!user) fail(401, '커스텀 펫은 로그인한 사용자 전용이에요.')
         if (path.startsWith('/api/pet/assets/') && req.method === 'GET') {
@@ -218,16 +279,23 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           res.writeHead(200, {'Content-Type':name.endsWith('.jpg')?'image/jpeg':name.endsWith('.webp')?'image/webp':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
           res.end(bytes);return
         }
+        // /api/pet, /api/pet/:petId[/reference|generate|expressions[/:expressionId[/generate]]]
+        const [, , , petId, section, expressionId, extra] = path.split('/')
+        const input = req.method === 'POST' || req.method === 'PUT' ? await jsonBody(req) : null
         let result
         if(path === '/api/pet' && req.method === 'GET')result=await pets.get(user.id)
-        else if(path === '/api/pet' && req.method === 'PUT')result=await pets.settings(user.id,await jsonBody(req))
-        else if(path === '/api/pet/reference' && req.method === 'POST')result=await pets.reference(user.id,(await jsonBody(req)).image)
-        else if(path === '/api/pet/generate' && req.method === 'POST'){
-          const {confirmed}=await jsonBody(req)
-          if(confirmed!==true)fail(400,'완료를 눌러 펫 생성을 시작해 주세요.')
-          result=await pets.generate(user.id)
+        else if(path === '/api/pet' && req.method === 'POST')result=await pets.create(user.id,input)
+        else if(path === '/api/pet/cancel' && req.method === 'POST')result=await pets.cancel(user.id,input.jobId)
+        else if(petId && !section && req.method === 'PUT')result=await pets.settings(user.id,petId,input)
+        else if(petId && !section && req.method === 'DELETE')result=await pets.remove(user.id,petId)
+        else if(section === 'reference' && !expressionId && req.method === 'POST')result=await pets.reference(user.id,petId,input.image)
+        else if(section === 'generate' && !expressionId && req.method === 'POST'){
+          if(input.confirmed!==true)fail(400,'완료를 눌러 펫 생성을 시작해 주세요.')
+          result=await pets.generate(user.id,petId)
         }
-        else if(path === '/api/pet/cancel' && req.method === 'POST')result=await pets.cancel(user.id,(await jsonBody(req)).jobId)
+        else if(section === 'expressions' && !expressionId && req.method === 'POST')result=await pets.addExpression(user.id,petId,input)
+        else if(section === 'expressions' && expressionId && extra === 'generate' && req.method === 'POST')result=await pets.regenerateExpression(user.id,petId,expressionId)
+        else if(section === 'expressions' && expressionId && extra === undefined && req.method === 'DELETE')result=await pets.removeExpression(user.id,petId,expressionId)
         else fail(404,'요청을 찾을 수 없어요.')
         send(res,200,result);return
       }
@@ -273,7 +341,6 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
       }
       if (path === '/api/register' || path === '/api/login') {
         if (req.method !== 'POST') fail(405, '허용되지 않은 요청이에요.')
-        const ip = req.socket.remoteAddress
         const recent = (attempts.get(ip) || []).filter((time) => time > Date.now() - 60000)
         if (recent.length >= 10) fail(429, '잠시 후 다시 시도해 주세요.')
         recent.push(Date.now())
@@ -304,8 +371,14 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           account = store.read().users.find((item) => item.username === loginName)
           const salt = account?.salt || '00000000000000000000000000000000'
           const actual = await hashPassword(password, salt, 64)
-          if (!account || !timingSafeEqual(actual, Buffer.from(account.hash, 'hex')))
+          if (!account || !timingSafeEqual(actual, Buffer.from(account.hash, 'hex'))) {
+            activity.record({ action: 'login-failed', username: loginName, ip })
             fail(401, '아이디 또는 비밀번호가 맞지 않아요.')
+          }
+          if (account.banned) {
+            activity.record({ action: 'login-banned', username: loginName, ip })
+            fail(403, '관리자에 의해 강퇴된 계정이에요.')
+          }
         }
         const newToken = randomBytes(32).toString('hex')
         await store.change(data => {
@@ -315,12 +388,14 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             userId: account.id, expires: Date.now() + (remember ? SESSION_AGE : BROWSER_SESSION_AGE),
           }
         })
+        activity.record({ action: path === '/api/register' ? 'register' : 'login', username: account.username, ip, remember })
         send(res, 200, { user: userView(account) }, { 'Set-Cookie': cookie(newToken, remember ? SESSION_AGE / 1000 : undefined) })
         return
       }
       if (path === '/api/logout' && req.method === 'POST') {
         if (key && store.read().sessions?.[key])
           await store.change(data => { delete data.sessions[key] })
+        if (user) record('logout')
         send(res, 200, { ok: true }, { 'Set-Cookie': cookie('', 0) })
         return
       }
@@ -340,6 +415,7 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           data.decks.push(deck)
           return deck
         })
+        record('create-deck', { deckId: created.id, deck: created.name, cards: created.cards.length })
         send(res, 201, { id: created.id })
         return
       }
@@ -362,11 +438,14 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           account.migrated = true
           return decks.length
         })
+        record('migrate', { count: created })
         send(res, 201, { count: created })
         return
       }
       if (parts[0] === 'api' && parts[1] === 'decks' && parts[2]) {
         const id = parts[2]
+        const nameBefore = store.read().decks.find((item) => item.id === id)?.name
+        let savedCards
         if (parts.length === 4 && parts[3] === 'history' && req.method === 'GET') {
           const deck = editableDeck(store.read(), id, user)
           send(res, 200, { revisions: store.read().revisions?.[id] || [snapshot(deck, null, 'initial')] })
@@ -407,8 +486,31 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             const index = Number.isInteger(body.index) &&
               body.index >= 0 && body.index <= deck.cards.length
               ? body.index : deck.cards.length
-            deck.cards.splice(index, 0, ...body.cards.map(cardInput))
+            savedCards = body.cards.map(cardInput)
+            deck.cards.splice(index, 0, ...savedCards)
             finishEdit(data, deck, user, 'add-cards')
+          })
+        } else if (parts.length === 5 && parts[3] === 'cards' && parts[4] === 'transfer' && req.method === 'POST') {
+          const ids = body?.cardIds
+          if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || ids.some((cardId) => typeof cardId !== 'string') || new Set(ids).size !== ids.length)
+            fail(400, '옮길 카드를 선택해 주세요.')
+          if (typeof body.targetId !== 'string' || body.targetId === id)
+            fail(400, '옮길 카드 셋을 선택해 주세요.')
+          await store.change((data) => {
+            const deck = editableDeck(data, id, user)
+            const target = editableDeck(data, body.targetId, user)
+            beginEdit(data, deck, user, body.baseVersion)
+            beginEdit(data, target, user, body.targetVersion)
+            const chosen = new Set(ids)
+            const moving = deck.cards.filter((card) => chosen.has(card.id))
+            if (moving.length !== ids.length) fail(404, '카드를 찾을 수 없어요.')
+            if (target.cards.length + moving.length > 1000)
+              fail(400, '카드 셋은 최대 1,000장까지 담을 수 있어요.')
+            // Card IDs are kept so study progress follows the cards to the new set.
+            deck.cards = deck.cards.filter((card) => !chosen.has(card.id))
+            target.cards.push(...moving)
+            finishEdit(data, deck, user, 'move-out-cards')
+            finishEdit(data, target, user, 'move-in-cards')
           })
         } else if (parts.length === 6 && parts[3] === 'cards' && parts[5] === 'move' && req.method === 'POST') {
           await store.change((data) => {
@@ -430,11 +532,26 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             const index = deck.cards.findIndex((card) => card.id === parts[4])
             if (index < 0) fail(404, '카드를 찾을 수 없어요.')
             if (req.method === 'DELETE') deck.cards.splice(index, 1)
-            else deck.cards[index] = { ...cardInput(body), id: parts[4] }
+            else savedCards = [deck.cards[index] = { ...cardInput(body), id: parts[4] }]
             finishEdit(data, deck, user, req.method === 'DELETE' ? 'delete-card' : 'edit-card')
           })
         } else fail(404, '요청을 찾을 수 없어요.')
-        send(res, 200, { ok: true })
+        const deckName = store.read().decks.find((item) => item.id === id)?.name || nameBefore
+        const action = req.method === 'DELETE' && parts.length === 3 ? 'delete-deck'
+          : parts[3] === 'restore' ? 'restore-deck'
+            : parts.length === 3 ? 'deck-settings'
+              : parts[4] === 'transfer' ? 'transfer-cards'
+                : parts[5] === 'move' ? 'move-card'
+                  : parts.length === 4 ? 'add-cards'
+                    : req.method === 'DELETE' ? 'delete-card' : 'edit-card'
+        record(action, {
+          deckId: id, ...(deckName ? { deck: deckName } : {}),
+          ...(action === 'add-cards' ? { count: body.cards.length } : {}),
+          ...(action === 'transfer-cards' ? { count: body.cardIds.length, target: store.read().decks.find((item) => item.id === body.targetId)?.name } : {}),
+          ...(['edit-card', 'delete-card', 'move-card'].includes(action) ? { cardId: parts[4] } : {}),
+        })
+        // Editors autosave repeatedly, so they need the new version and the stored cards.
+        send(res, 200, { ok: true, version: store.read().decks.find((item) => item.id === id)?.version, ...(savedCards ? { cards: savedCards } : {}) })
         return
       }
       fail(404, '요청을 찾을 수 없어요.')

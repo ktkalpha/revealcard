@@ -248,7 +248,7 @@ button svg {
   color: var(--tone-fff, #fff);
   padding: 12px;
 }
-.skip-link:focus {
+.skip-link:focus-visible {
   top: 10px;
 }
 .muted {
