@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises'
+import {mkdtemp,rm,readFile,writeFile,mkdir,stat} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {once} from 'node:events'
@@ -158,4 +158,70 @@ test('a legacy single pet becomes the first pet of the list with default mapping
     assert.equal(renamed.pets[0].name,'테토')
     assert.equal(JSON.parse(await readFile(join(dir,'state.json'),'utf8')).pets.owner.list.length,1)
   }finally{await rm(dir,{recursive:true,force:true})}
+})
+
+test('admins list and delete pet images, cleaning job folders, Codex copies and pet records',async()=> {
+  const dir=await mkdtemp(join(tmpdir(),'pet-admin-'))
+  try {
+    const codex=join(dir,'codex'),jobs=join(dir,'jobs')
+    const pets=createPets(join(dir,'pets'),{workDir:jobs,codexImages:codex})
+    const id=(await pets.create('one')).created
+    await pets.reference('one',id,png)
+    const finish=async()=> {
+      const job=await pets.claim()
+      const copy=join(codex,'session-'+job.id,`exec-${job.id}.png`),outside=join(dir,`exec-${job.id}.png`)
+      await mkdir(join(codex,'session-'+job.id),{recursive:true});await writeFile(copy,'x');await writeFile(outside,'x')
+      await mkdir(join(jobs,job.id),{recursive:true})
+      await writeFile(join(jobs,job.id,'events.jsonl'),JSON.stringify({text:`saved ${copy} and ${outside}`}))
+      await pets.finish(job.id,job.claim,png)
+      return {job,copy,outside}
+    }
+    await pets.generate('one',id);const oldSheet=await finish()
+    await pets.reference('one',id,png);await pets.generate('one',id);const sheet=await finish()
+    const added=await pets.addExpression('one',id,{label:'졸림',prompt:'졸린 표정'});const expression=await finish()
+    await pets.settings('one',id,{mapping:{known:added.created}})
+    const listed=(await pets.adminImages([{id:'one',username:'alice'}])).images
+    const unused=listed.filter(item=>!item.inUse)
+    assert.deepEqual(listed.filter(item=>item.inUse).map(item=>item.kind).sort(),['expression','reference','sheet'])
+    assert.deepEqual(unused.map(item=>item.kind).sort(),['reference','sheet'])
+    assert.ok(listed.every(item=>item.username==='alice'&&item.size>0))
+    await assert.rejects(pets.adminDelete(['../state.json']),{status:400})
+
+    assert.equal((await pets.adminDelete(unused.map(item=>item.name))).removed,2)
+    await assert.rejects(stat(oldSheet.copy));await assert.rejects(stat(join(jobs,oldSheet.job.id)))
+    await stat(oldSheet.outside)
+    await stat(sheet.copy)
+    let view=(await pets.get('one')).pets[0]
+    assert.ok(view.sheet&&view.image&&view.enabled);assert.equal(view.expressions.length,1)
+
+    const expressionImage=listed.find(item=>item.kind==='expression').name
+    await pets.adminDelete([expressionImage])
+    view=(await pets.get('one')).pets[0]
+    assert.equal(view.expressions.length,0);assert.equal(view.mapping.known,'happy')
+    await assert.rejects(stat(expression.copy))
+    await assert.rejects(pets.asset('one',expressionImage),{status:404})
+
+    await pets.adminDelete(listed.filter(item=>item.inUse).map(item=>item.name))
+    view=(await pets.get('one')).pets[0]
+    assert.deepEqual([view.image,view.sheet,view.enabled,view.job],['','',false,null])
+    assert.deepEqual((await pets.adminImages()).images,[])
+  }finally{await rm(dir,{recursive:true,force:true})}
+})
+
+test('pet image admin API is admin-only and logged',async()=> {
+  const dir=await mkdtemp(join(tmpdir(),'pet-admin-api-'))
+  const server=await createApp({dataFile:join(dir,'data.json'),distDir:dir})
+  try {
+    server.listen(0,'127.0.0.1');await once(server,'listening')
+    const base=`http://127.0.0.1:${server.address().port}`
+    const request=async(path,method='GET',body,cookie='')=>fetch(base+path,{method,headers:{Cookie:cookie,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined})
+    const r=await request('/api/register','POST',{username:'img_user',password:'pet-test-password-123'})
+    const cookie=r.headers.get('set-cookie').split(';')[0]
+    const id=(await (await request('/api/pet','POST',{},cookie)).json()).created
+    await request(`/api/pet/${id}/reference`,'POST',{image:png},cookie)
+    for(const [path,method,body] of [['/api/admin/pet-images','GET'],['/api/admin/pet-images/delete','POST',{names:[]}]]) {
+      assert.equal((await request(path,method,body)).status,403)
+      assert.equal((await request(path,method,body,cookie)).status,403)
+    }
+  }finally{await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true})}
 })

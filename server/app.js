@@ -246,6 +246,24 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         send(res, 200, activity.snapshot(store.read().users, limit))
         return
       }
+      if (path.startsWith('/api/admin/pet-images')) {
+        if (!user?.admin) fail(403, '관리자만 할 수 있어요.')
+        const name = path.slice('/api/admin/pet-images/'.length)
+        if (path === '/api/admin/pet-images' && req.method === 'GET') {
+          record('admin-view-pet-images')
+          send(res, 200, await pets.adminImages(store.read().users))
+        } else if (path === '/api/admin/pet-images/delete' && req.method === 'POST') {
+          const { names } = await jsonBody(req)
+          const { removed } = await pets.adminDelete(names)
+          record('admin-delete-pet-images', { count: removed })
+          send(res, 200, { removed, ...(await pets.adminImages(store.read().users)) })
+        } else if (name && req.method === 'GET') {
+          const bytes = await pets.adminImage(name)
+          res.writeHead(200, { 'Content-Type': name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : 'image/png', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" })
+          res.end(bytes)
+        } else fail(404, '요청을 찾을 수 없어요.')
+        return
+      }
       const kick = /^\/api\/admin\/users\/([^/]+)\/(kick|unban)$/.exec(path)
       if (kick && req.method === 'POST') {
         if (!user?.admin) fail(403, '관리자만 할 수 있어요.')

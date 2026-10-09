@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { RotateCcw, UserX, UserCheck } from 'lucide-react'
+import { RotateCcw, UserX, UserCheck, Trash2, Images } from 'lucide-react'
 import Modal from './Modal'
 import { Button } from './ui/button'
 import { api } from '../lib/api'
@@ -23,8 +23,12 @@ const ACTIONS = {
   'admin-kick': '계정 강퇴',
   'admin-unban': '강퇴 해제',
   'login-banned': '강퇴된 계정 로그인 시도',
+  'admin-view-pet-images': '관리자 펫 이미지 열람',
+  'admin-delete-pet-images': '관리자 펫 이미지 삭제',
 }
 const AUTH_ACTIONS = ['login', 'login-failed', 'login-banned', 'register', 'logout', 'admin-kick', 'admin-unban']
+const KINDS = { reference: '원본', sheet: '표정 시트', expression: '나만의 표정', upload: '올린 표정', unknown: '기록 없음' }
+const megabytes = (bytes) => bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)}KB` : `${(bytes / 1024 / 1024).toFixed(1)}MB`
 const time = (value) => value ? new Date(value).toLocaleString() : '—'
 const ago = (value) => {
   if (!value) return '기록 없음'
@@ -112,6 +116,7 @@ export default function AdminDialog({ onClose }) {
         </table></div>
         <p className="muted">마지막 접속은 서버를 다시 시작한 뒤부터 기록돼요. 강퇴하면 모든 기기에서 로그아웃되고 해제할 때까지 로그인할 수 없어요.</p>
       </section>
+      <PetImages />
       <section className="admin-section">
         <div className="admin-log-head">
           <h3>활동 로그 <span>{events.length}</span></h3>
@@ -134,4 +139,65 @@ export default function AdminDialog({ onClose }) {
       </section>
     </>}
   </Modal>
+}
+
+// Loaded on request: thumbnails are other users' private images and opening them is logged.
+function PetImages() {
+  const [data, setData] = useState(null)
+  const [filter, setFilter] = useState('unused')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const run = async (operation) => {
+    setBusy(true)
+    try {
+      setData(await operation())
+      setError('')
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const load = () => { setNotice(''); run(() => api('/api/admin/pet-images')) }
+  const remove = (items, message) => {
+    if (!items.length || !window.confirm(message)) return
+    run(async () => {
+      const result = await api('/api/admin/pet-images/delete', { method: 'POST', body: { names: items.map((item) => item.name) } })
+      setNotice(`이미지 ${result.removed}개를 지웠어요.`)
+      return result
+    })
+  }
+  const images = data?.images || []
+  const unused = images.filter((item) => !item.inUse)
+  const shown = images.filter((item) => filter === 'all' || (filter === 'unused' ? !item.inUse : item.inUse))
+  const total = (items) => megabytes(items.reduce((sum, item) => sum + item.size, 0))
+  return <section className="admin-section">
+    <div className="admin-log-head">
+      <h3>펫 이미지 {data && <span>{images.length}</span>}</h3>
+      {data && <select aria-label="펫 이미지 종류" value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <option value="unused">사용하지 않음 ({unused.length})</option>
+        <option value="used">사용 중 ({images.length - unused.length})</option>
+        <option value="all">전체</option>
+      </select>}
+    </div>
+    <p className="muted">원본·Codex가 만든 표정 이미지를 지울 수 있어요. 지우면 서버 작업 폴더와 Codex 보관본도 함께 지워지고 되돌릴 수 없어요. 사용 중인 이미지를 지우면 그 펫에서 빠져요.</p>
+    {!data ? <Button variant="outline" size="sm" disabled={busy} onClick={load}><Images size={14} /> 펫 이미지 불러오기</Button>
+      : <div className="admin-image-actions">
+        <span className="muted">전체 {total(images)} · 사용하지 않음 {total(unused)}</span>
+        <Button variant="outline" size="sm" disabled={busy} onClick={load}><RotateCcw size={14} /> 새로 고침</Button>
+        <Button variant="outline" size="sm" className="admin-kick" disabled={busy || !unused.length} onClick={() => remove(unused, `사용하지 않는 펫 이미지 ${unused.length}개(${total(unused)})를 모두 지울까요?`)}><Trash2 size={14} /> 사용하지 않는 이미지 모두 삭제</Button>
+      </div>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {notice && <p className="muted" role="status">{notice}</p>}
+    {data && (shown.length ? <ul className="admin-images">
+      {shown.map((item) => <li key={item.name} className={item.inUse ? 'in-use' : undefined}>
+        <a href={`/api/admin/pet-images/${item.name}`} target="_blank" rel="noreferrer"><img src={`/api/admin/pet-images/${item.name}`} alt="" loading="lazy" /></a>
+        <span><strong>{item.username || '알 수 없음'}</strong> · {KINDS[item.kind]}{item.label && ` ‘${item.label}’`}</span>
+        <small>{item.inUse ? `사용 중${item.pet ? ` · ${item.pet}` : ''}` : '사용하지 않음'}</small>
+        <small>{time(item.createdAt)} · {megabytes(item.size)}</small>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => remove([item], `${item.username || '알 수 없음'}의 ${KINDS[item.kind]} 이미지를 지울까요?${item.inUse ? '\n지금 펫에서 쓰는 이미지예요.' : ''}`)} aria-label={`${item.username || '알 수 없음'} ${KINDS[item.kind]} 이미지 삭제`}><Trash2 size={13} /> 삭제</Button>
+      </li>)}
+    </ul> : <p className="muted">해당하는 이미지가 없어요.</p>)}
+  </section>
 }

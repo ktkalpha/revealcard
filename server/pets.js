@@ -1,13 +1,18 @@
-import { mkdir, readFile, writeFile, rename, open, unlink, stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, readdir, writeFile, rename, open, unlink, stat, rm, rmdir } from 'node:fs/promises'
+import { dirname, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { normalizePet, normalizePetPosition, validPetImage, normalizeMapping, expressionLabel, expressionPrompt, DEFAULT_PET_MAPPING, MAX_PETS, MAX_PET_EXPRESSIONS, petSheetPrompt, petExpressionPrompt, petDescription } from '../src/lib/pet.js'
 const uuid = /^[0-9a-f-]{36}$/
 const error = (status,message) => Object.assign(new Error(message),{status})
 const delay = ms => new Promise(r=>setTimeout(r,ms))
 const activeJob = job => !!job && ['queued','running'].includes(job.status)
-export function createPets(directory) {
+const assetName = /^[0-9a-f-]{36}\.(png|jpg|webp)$/
+// The worker keeps each job's files in workDir and Codex keeps its own copy of every
+// generated image in codexImages; both are removed along with a deleted output.
+export function createPets(directory,{workDir=process.env.PET_WORK_DIR,codexImages=process.env.PET_CODEX_IMAGES}={}) {
   const dir=resolve(directory), file=resolve(dir,'state.json'), lock=resolve(dir,'state.lock')
+  const jobsDir=resolve(workDir||resolve(dir,'worker-jobs')), codexDir=resolve(codexImages||resolve(homedir(),'.codex/generated_images'))
   const empty=()=>({pets:{},jobs:{},workerSeen:0})
   async function read() {try{return JSON.parse(await readFile(file,'utf8'))}catch(e){if(e.code==='ENOENT')return empty();throw e}}
   async function change(fn) {
@@ -152,6 +157,54 @@ export function createPets(directory) {
       const allowed=pets(data,owner).some(pet=>pet.reference===name||(pet.expressions||[]).some(item=>item.asset===name)) || Object.values(data.jobs).some(j=>j.owner===owner&&(j.output===name||j.reference===name))
       if(!allowed)throw error(404,'이미지를 찾을 수 없어요.')
       return readFile(resolve(dir,'assets',name))
+    },
+    // Admin: every stored image with its owner, what it is and whether a pet still shows it.
+    async adminImages(users=[]){
+      const data=await read(),items=new Map()
+      const files=await readdir(resolve(dir,'assets')).catch(()=>[])
+      for(const name of files)if(assetName.test(name)){const info=await stat(resolve(dir,'assets',name)).catch(()=>null);if(info)items.set(name,{name,size:info.size,createdAt:info.mtimeMs,owner:null,kind:'unknown',inUse:false,pet:null,label:null})}
+      const mark=(name,fields)=>{const item=name&&items.get(name);if(item)Object.assign(item,fields,{inUse:item.inUse||!!fields.inUse})}
+      for(const job of Object.values(data.jobs)){mark(job.reference,{owner:job.owner,kind:'reference'});mark(job.output,{owner:job.owner,kind:job.kind==='expression'?'expression':'sheet'})}
+      for(const owner of Object.keys(data.pets))for(const pet of pets(data,owner)) {
+        mark(pet.reference,{owner,kind:'reference',inUse:true,pet:pet.name})
+        const sheet=data.jobs[pet.jobId];if(sheet?.status==='done')mark(sheet.output,{owner,kind:'sheet',inUse:true,pet:pet.name})
+        for(const item of pet.expressions||[]){const job=data.jobs[item.jobId];mark(item.asset||(job?.status==='done'?job.output:null),{owner,kind:item.asset?'upload':'expression',inUse:true,pet:pet.name,label:item.label})}
+      }
+      const username=id=>users.find(user=>user.id===id)?.username||null
+      return {images:[...items.values()].map(item=>({...item,username:username(item.owner),createdAt:new Date(item.createdAt).toISOString()})).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))}
+    },
+    async adminImage(name){if(!assetName.test(name))throw error(404,'이미지를 찾을 수 없어요.');return readFile(resolve(dir,'assets',name)).catch(()=>{throw error(404,'이미지를 찾을 수 없어요.')})},
+    // Removes images and every record pointing at them; pets fall back to what they have left.
+    async adminDelete(names){
+      if(!Array.isArray(names)||!names.length||names.length>1000||!names.every(name=>typeof name==='string'&&assetName.test(name)))throw error(400,'지울 이미지를 선택해 주세요.')
+      const doomed=new Set(names),jobDirs=[]
+      await change(data=>{
+        for(const job of Object.values(data.jobs)) {
+          if(doomed.has(job.reference))cancelJob(job)
+          if(doomed.has(job.output)){job.output=null;job.status='deleted';jobDirs.push(job.id)}
+        }
+        for(const owner of Object.keys(data.pets))for(const pet of pets(data,owner)) {
+          if(doomed.has(pet.reference))pet.reference=null
+          if(data.jobs[pet.jobId]?.status==='deleted')pet.jobId=null
+          const kept=(pet.expressions||[]).filter(item=>!doomed.has(item.asset)&&data.jobs[item.jobId]?.status!=='deleted')
+          if(kept.length!==(pet.expressions||[]).length){pet.expressions=kept;pet.mapping=normalizeMapping(pet.mapping,kept.map(item=>item.id))}
+          if(!pet.reference&&!data.jobs[pet.jobId])pet.enabled=false
+        }
+      })
+      let removed=0
+      for(const name of doomed)await unlink(resolve(dir,'assets',name)).then(()=>removed++,()=>{})
+      for(const id of jobDirs)if(uuid.test(id)) {
+        const jobDir=resolve(jobsDir,id)
+        const log=await readFile(resolve(jobDir,'events.jsonl'),'utf8').catch(()=>'')
+        for(const path of new Set(log.match(/[^"\\\s]+\/exec-[0-9a-f-]+\.png/g)||[])) {
+          const copy=resolve(path)
+          if(!copy.startsWith(codexDir+sep))continue
+          await unlink(copy).catch(()=>{})
+          await rmdir(dirname(copy)).catch(()=>{})
+        }
+        await rm(jobDir,{recursive:true,force:true})
+      }
+      return {removed}
     },
     async claim(){return change(async data=>{
       data.workerSeen=Date.now()

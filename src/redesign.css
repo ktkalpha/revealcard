@@ -488,3 +488,13 @@ body, body *, input, textarea, button, select, code, pre { font-family: 'KoPubWo
 .admin-banned td { color: var(--muted); }
 .admin-table .admin-kick { color: #b4382f; }
 .alignment-control { margin: 0 0 10px; }
+
+.admin-image-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.admin-image-actions > span { margin-right: auto; }
+.admin-images { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 10px; max-height: 520px; overflow: auto; }
+.admin-images li { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--ui-line); border-radius: 8px; font-size: 11.5px; }
+.admin-images li.in-use { border-color: var(--accent); }
+.admin-images a { display: block; aspect-ratio: 1; border-radius: 6px; background: var(--ui-soft); overflow: hidden; }
+.admin-images img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.admin-images small { color: var(--muted); font-size: 10.5px; }
+.admin-images .button { margin-top: 4px; }
