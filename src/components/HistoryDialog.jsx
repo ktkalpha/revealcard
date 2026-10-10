@@ -22,11 +22,11 @@ export default function HistoryDialog({ deck, offline, onClose, onRestore }) {
     {revisions && <>
       <label className="form-label" htmlFor="history-version">저장된 버전</label>
       <select id="history-version" value={selected?.version ?? ''} onChange={(event) => setSelected(revisions.find((item) => item.version === Number(event.target.value)))}>
-        {[...revisions].reverse().map((item) => <option key={item.version} value={item.version}>v{item.version} · {item.editor} · {new Date(item.timestamp).toLocaleString()} · {item.action}</option>)}
+        {revisions.map((item, index) => [item, index + 1]).reverse().map(([item, number]) => <option key={item.version} value={item.version}>#{number} · {item.editor} · {new Date(item.timestamp).toLocaleString()} · {item.action}</option>)}
       </select>
       {selected && <div className="history-preview"><h3>{selected.name}</h3><p>{selected.cards.length}장</p>{selected.cards.map((card) => <details key={card.id}><summary>{card.title}</summary><pre>{card.body}</pre></details>)}</div>}
       <div className="dialog-actions"><Button variant="outline" onClick={onClose}>닫기</Button><Button disabled={offline || saving || !selected || selected.version === deck.version} onClick={async () => {
-        if (!window.confirm(`v${selected.version}의 이름과 카드 내용을 복원할까요? 현재 내용도 기록에 보관돼요.`)) return
+        if (!window.confirm(`#${revisions.indexOf(selected) + 1} 기록의 이름과 카드 내용을 복원할까요? 현재 내용도 기록에 보관돼요.`)) return
         setSaving(true)
         try { await onRestore(selected.version, deck.version) } finally { setSaving(false) }
       }}>이 버전 복원</Button></div>

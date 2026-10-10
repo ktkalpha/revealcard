@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { markdownExcerpt, prepareMarkdown, remarkMasks } from '../src/lib/markdown.js'
 import { exportCardSet, parseCardSet } from '../src/cardSet.js'
+import { remark } from 'remark'
 
 test('masks keep their source IDs while markdown remains parseable', () => {
   const { source, masks } = prepareMarkdown('**앞 [[정답]]**\n- [[둘째]]')
@@ -70,4 +71,19 @@ test('card list excerpt omits markdown punctuation but keeps answers', () => {
     markdownExcerpt('**중요한 [[정답]]**\n- 첫 항목\n`코드`와 [링크](https://example.com)'),
     '중요한 정답 첫 항목 코드와 링크',
   )
+})
+
+test('a cover right after ^ becomes a note above the word or bold run before it', () => {
+  const { source, masks } = prepareMarkdown('**생사(生死)**^[[삶과 죽음]] 길흔^[[발음]] 끝 ^ [[보통]]')
+  const tree = remark.parse(source)
+  remarkMasks({ masks })(tree)
+  const paragraph = tree.children[0].children
+  const notes = paragraph.filter((node) => node.type === 'annotation')
+  assert.equal(notes.length, 2)
+  const [first, second] = notes
+  assert.equal(first.children[0].children[0].type, 'strong')
+  assert.equal(first.children[1].children[0].url, '#revealcard-mask-0')
+  assert.deepEqual(second.children[0].children[0], { type: 'text', value: '길흔' })
+  assert.ok(paragraph.some((node) => node.type === 'text' && node.value.endsWith('^ ')))
+  assert.equal(markdownExcerpt('길흔^[[발음]] 뒤'), '길흔 발음 뒤')
 })

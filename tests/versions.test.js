@@ -54,3 +54,41 @@ test('anonymous revisions persist, restore without erasing history, and reject s
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('autosaves of one card by one person become a single history entry', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'revealcard-autosave-history-'))
+  const server = await createApp({ dataFile: join(dir, 'data.json'), distDir: dir })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const base = `http://127.0.0.1:${server.address().port}`
+  const request = async (path, method = 'GET', body, cookie = '') => {
+    const response = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: body ? JSON.stringify(body) : undefined })
+    return { data: await response.json(), cookie: response.headers.get('set-cookie')?.split(';')[0] }
+  }
+  try {
+    const owner = await request('/api/register', 'POST', { username: 'autosaver', password: 'correct-horse-123' })
+    const created = await request('/api/decks', 'POST', { name: 'Typing', visibility: 'private', cards: [{ title: 'A', body: 'a' }, { title: 'B', body: 'b' }] }, owner.cookie)
+    const path = `/api/decks/${created.data.id}`
+    const [first, second] = (await request('/api/bootstrap', 'GET', undefined, owner.cookie)).data.decks[0].cards
+    let version = 0
+    const save = async (card, title) => {
+      const result = await request(`${path}/cards/${card.id}`, 'PUT', { ...card, title, baseVersion: version }, owner.cookie)
+      version = result.data.version
+      return result.data
+    }
+    await save(first, 'A1')
+    await save(first, 'A12')
+    const last = await save(first, 'A123')
+    assert.equal(version, 3, 'every save still moves the version on')
+    assert.equal(last.historyCount, 2)
+    await save(second, 'B1')
+    const history = (await request(`${path}/history`, 'GET', undefined, owner.cookie)).data.revisions
+    assert.deepEqual(history.map((item) => item.action), ['initial', 'edit-card', 'edit-card'])
+    assert.equal(history[1].cards[0].title, 'A123')
+    assert.equal(history[1].version, 3)
+    assert.equal((await request('/api/bootstrap', 'GET', undefined, owner.cookie)).data.decks[0].historyCount, 3)
+    assert.equal((await request(`${path}/restore`, 'POST', { version: 3, baseVersion: version }, owner.cookie)).data.ok, true)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+    await rm(dir, { recursive: true, force: true })
+  }
+})

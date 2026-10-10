@@ -10,6 +10,7 @@ import {
   EyeOff,
   Keyboard,
   Pencil,
+  PenLine,
   Plus,
   RotateCcw,
   Shuffle,
@@ -24,9 +25,17 @@ import MatchingGame from './MatchingGame'
 import ClassificationGame from './ClassificationGame'
 import OcclusionImage from './OcclusionImage'
 import StudyPets from './StudyPet'
+import HardAnswer from './HardAnswer'
 import { masksIn, maskKey, wrongMaskIds } from '../lib/masks'
 import { occlusionMasks } from '../lib/occlusion'
 import { isStructured } from '../lib/editing'
+import { grade, normalize } from '../lib/grade'
+import { api } from '../lib/api'
+
+const HARD_KEY = 'revealcard-hard-mode'
+const readHard = () => {
+  try { return localStorage.getItem(HARD_KEY) === '1' } catch { return false }
+}
 
 export default function Study({
   deck,
@@ -64,10 +73,17 @@ export default function Study({
   const [drag, setDrag] = useState(0)
   // The blank the keyboard acts on (↑↓ to move, Enter to toggle, X to mark wrong).
   const [active, setActive] = useState(null)
+  // Hard (서술형) mode: blanks are answered by typing instead of being opened.
+  const [hard, setHard] = useState(readHard)
+  const [feedback, setFeedback] = useState(null)
+  const [hardResults, setHardResults] = useState({})
+  const [grading, setGrading] = useState(false)
+  const currentCard = useRef(null)
   const completionActions = useRef(null)
   const pointer = useRef(null)
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
+  currentCard.current = card?.id
   const isGame = ['matching','classification'].includes(card?.kind)
   // Notes are ordinary cards now; only passages and photo games keep a page layout.
   const wide = ['passage','classification'].includes(card?.kind)
@@ -100,17 +116,28 @@ export default function Study({
   const rememberedCount = deck.cards.filter((item) => ratings[item.id] === 'known').length
   const rememberedPercent = deck.cards.length ? Math.round(rememberedCount / deck.cards.length * 100) : 0
   const knownCount = Object.values(results).filter((v) => v === 'known').length
+  // Occlusion boxes take part only when every box has a label to type.
+  const hardActive = hard && !isGame && maskIds.length > 0 && cardMasks.every((mask) => mask.text.trim())
+  const hardTarget = !hardActive ? null
+    : active !== null && maskIds.includes(active) && !revealed.has(active) ? active
+      // After answering, carry on from that blank rather than jumping back to the top.
+      : [...maskIds.slice(maskIds.indexOf(active) + 1), ...maskIds].find((id) => !revealed.has(id)) ?? null
+  const hardTally = Object.values(hardResults).reduce((tally, verdict) => ({ ...tally, [verdict]: (tally[verdict] || 0) + 1 }), {})
 
   useEffect(() => {
     setRevealed(new Set())
     setActive(null)
     setMatchingDone(false)
+    setFeedback(null)
+    setHardResults({})
     if (card) onPosition(card.id)
   }, [card?.id])
+  // In Hard mode the blank to answer comes into view (above the answer box) as it changes.
+  const focusMask = hardTarget ?? active
   useEffect(() => {
-    if (active !== null)
-      document.querySelector(`[data-mask-id="${CSS.escape(String(active))}"]`)?.scrollIntoView({ block: 'nearest' })
-  }, [active])
+    if (focusMask !== null)
+      document.querySelector(`[data-mask-id="${CSS.escape(String(focusMask))}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [focusMask])
   useEffect(() => {
     if (complete) completionActions.current?.querySelector('button')?.focus()
   }, [complete])
@@ -130,7 +157,54 @@ export default function Study({
     const id = maskIds.find((id) => !revealed.has(id))
     if (id !== undefined) reveal(id)
   }
-  const activeId = maskIds.includes(active) ? active : null
+  const activeId = hardTarget ?? (maskIds.includes(active) ? active : null)
+  const switchHard = () => {
+    const next = !hard
+    setHard(next)
+    setFeedback(null)
+    try { localStorage.setItem(HARD_KEY, next ? '1' : '0') } catch {}
+  }
+  // In Hard mode tapping a covered blank picks it to answer instead of opening it.
+  const tapMask = (id) => (hardActive && !revealed.has(id) ? setActive(id) : toggle(id))
+  const setWrongMark = (id, wrong) => {
+    if (!canMarkWrong) return
+    const key = maskKey(cardMasks.find((mask) => mask.id === id))
+    if (cardWrongKeys.has(key) !== wrong) onMarkWrong(card.id, key, wrong)
+  }
+  const judge = (id, verdict, extra) => {
+    reveal(id)
+    setHardResults((prev) => ({ ...prev, [id]: verdict }))
+    setWrongMark(id, verdict === 'wrong' || verdict === 'skip')
+    setFeedback({ id, verdict, answer: cardMasks.find((mask) => mask.id === id).text, ...extra })
+  }
+  // Typed answers are checked locally first. Longer answers it cannot accept go to the
+  // server's meaning-based grader, so paraphrases count; offline or on failure the local verdict stands.
+  const submitAnswer = async (input) => {
+    if (grading) return
+    const id = hardTarget, cardId = card.id
+    const answer = cardMasks.find((mask) => mask.id === id).text
+    let result = grade(answer, input)
+    let source = 'local'
+    if (result.verdict !== 'correct' && normalize(answer).length >= 4 && !/\d/.test(answer) && navigator.onLine) {
+      setGrading(true)
+      try {
+        const checked = await api('/api/grade', { method: 'POST', body: { answer, input } })
+        result = checked
+        source = 'meaning'
+      } catch {}
+      setGrading(false)
+      if (currentCard.current !== cardId) return
+    }
+    companion?.react(result.verdict === 'wrong' ? 'again' : 'known')
+    judge(id, result.verdict, { score: result.score, input: input.trim(), source })
+  }
+  const overrule = () => {
+    if (!feedback) return
+    const verdict = feedback.verdict === 'wrong' ? 'correct' : 'wrong'
+    setHardResults((prev) => ({ ...prev, [feedback.id]: verdict }))
+    setWrongMark(feedback.id, verdict === 'wrong')
+    setFeedback({ ...feedback, verdict, overridden: true })
+  }
   const selectMask = (step) => {
     if (!maskIds.length) return
     const index = maskIds.indexOf(activeId)
@@ -291,7 +365,7 @@ export default function Study({
   return (
     <main
       id="main"
-      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${wide ? ' note-study-page' : ''}`}
+      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${wide ? ' note-study-page' : ''}${hardActive && hardTarget !== null && !complete ? ' hard-answering' : ''}`}
     >
       <div className="study-layout">
         <aside className="study-overview" aria-label="학습 현황">
@@ -363,6 +437,16 @@ export default function Study({
                 틀린 가리개 <span>{wrongReviewIds.length}</span>
               </button>
             </div>
+            <Button
+              variant={hard ? 'default' : 'ghost'}
+              size="sm"
+              className="hard-toggle"
+              aria-pressed={hard}
+              title="Hard 모드: 빈칸의 답을 직접 써서 채점해요"
+              onClick={switchHard}
+            >
+              <PenLine size={16} /> Hard
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -498,16 +582,16 @@ export default function Study({
                   </div>
                   <div className={wide ? 'note-study-content' : 'sheet-content'} key={card.id}>
                     <h1 style={wide ? undefined : { textAlign }}>{card.title}</h1>
-                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} activeId={activeId} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
+                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={tapMask} activeId={activeId} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
                     ) : card.kind === 'occlusion' ? (
-                      <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={toggle} focusIds={focusIds} activeId={activeId} />
+                      <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={tapMask} focusIds={focusIds} activeId={activeId} />
                     ) : (
                       <MaskedText
                         body={card.body}
                         align={textAlign}
                         revealed={revealed}
-                        onToggle={toggle}
+                        onToggle={tapMask}
                         activeId={activeId}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
@@ -545,6 +629,20 @@ export default function Study({
                 <div className="study-dock">
                   {isGame && !matchingDone ? (
                     <p className="action-hint">{card.kind === 'classification' ? '사진을 모두 분류하면 학습 완료를 표시할 수 있어요.' : '모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.'}</p>
+                  ) : hardActive && (!allVisible || feedback) ? (
+                    <>
+                      <HardAnswer
+                        target={allVisible ? null : hardTarget}
+                        ordinal={maskIds.indexOf(hardTarget) + 1}
+                        remaining={maskIds.filter((id) => !revealed.has(id)).length}
+                        feedback={feedback}
+                        onSubmit={submitAnswer}
+                        busy={grading}
+                        onGiveUp={() => hardTarget !== null && judge(hardTarget, 'skip', { score: 0, input: '' })}
+                        onOverride={overrule}
+                      />
+                      {allVisible && <HardRating tally={hardTally} onRate={rate} />}
+                    </>
                   ) : !allVisible ? (
                     <>
                       <Button className="reveal-next" onClick={revealNext}>
@@ -556,6 +654,7 @@ export default function Study({
                     </>
                   ) : (
                     <>
+                      {hardActive && Object.keys(hardResults).length > 0 && <p className="hard-tally">서술형 결과 · 정답 {(hardTally.correct || 0) + (hardTally.close || 0)} · 오답 {(hardTally.wrong || 0) + (hardTally.skip || 0)}</p>}
                       <div className="rating-actions">
                         <Button variant="outline" onClick={() => rate('again')}>
                           <RotateCcw size={17} /> 다시 볼게요 <kbd>1</kbd>
@@ -605,5 +704,23 @@ export default function Study({
       </div>
       {petProps && <StudyPets {...petProps} />}
     </main>
+  )
+}
+
+function HardRating({ tally, onRate }) {
+  const right = (tally.correct || 0) + (tally.close || 0)
+  const missed = (tally.wrong || 0) + (tally.skip || 0)
+  return (
+    <>
+      <p className="hard-tally">서술형 결과 · 정답 {right} · 오답 {missed}</p>
+      <div className="rating-actions">
+        <Button variant={missed ? 'default' : 'outline'} onClick={() => onRate('again')}>
+          <RotateCcw size={17} /> 다시 볼게요 <kbd>1</kbd>
+        </Button>
+        <Button variant={missed ? 'outline' : 'default'} onClick={() => onRate('known')}>
+          <Check size={18} /> 기억했어요 <kbd>2</kbd>
+        </Button>
+      </div>
+    </>
   )
 }

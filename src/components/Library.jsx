@@ -261,7 +261,7 @@ export default function Library({
             </Button>
           </div>
           <div className="collection-tools">
-            <Button variant="outline" size="sm" onClick={onHistory} disabled={offline || !deck.id}>버전 기록 · v{deck.version || 0}</Button>
+            <Button variant="outline" size="sm" onClick={onHistory} disabled={offline || !deck.id}>버전 기록 · {deck.historyCount || 1}개</Button>
             <div className="search-input">
               <Search size={17} />
               <input

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, Check, FlaskConical, ShieldCheck, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
+import { BookOpen, Check, Disc3, FlaskConical, ShieldCheck, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
@@ -424,6 +424,7 @@ function App() {
       decks: prev.decks.map((d) => d.id !== target.id ? d : {
         ...d,
         version: result.version,
+        historyCount: result.historyCount ?? d.historyCount,
         cards: serverId ? d.cards.map((c) => c.id === serverId ? stored : c) : [...d.cards, stored],
       }),
     }))
@@ -637,6 +638,11 @@ function App() {
           <button className={`nav-link ${modal?.type === 'experiments' ? 'active' : ''}`} onClick={() => setModal({ type: 'experiments' })}>
             <FlaskConical size={16} /> 실험실 <small className="labs-badge">BETA</small>
           </button>
+          {user && !offline && (
+            <a className="nav-link" href="/club/">
+              <Disc3 size={16} /> 비밀 클럽
+            </a>
+          )}
           {user?.admin && !offline && (
             <button className={`nav-link ${modal?.type === 'admin' ? 'active' : ''}`} onClick={() => setModal({ type: 'admin' })}>
               <ShieldCheck size={16} /> 관리자

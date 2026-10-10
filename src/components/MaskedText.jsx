@@ -1,15 +1,27 @@
-import React from 'react'
+import React, { useLayoutEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X, Check } from 'lucide-react'
 import { prepareMarkdown, remarkMasks } from '../lib/markdown'
 import { maskKey } from '../lib/masks'
 import { CARD_IMAGE_URL } from '../lib/images'
+import { placeAnnotations } from '../lib/annotations'
 
 export default function MaskedText({
   body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong, activeId,
   maskParts, maskOrdinalStart = 0,
 }) {
+  const root = useRef(null)
+  const annotated = body.includes('^[[')
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!annotated || !element) return
+    const place = () => placeAnnotations(element)
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(element)
+    return () => observer.disconnect()
+  })
   const prepared = prepareMarkdown(body)
   const { source } = prepared
   const masks = maskParts || prepared.masks
@@ -48,7 +60,7 @@ export default function MaskedText({
     )
   }
   return (
-    <div className="study-text" style={{ textAlign: align }}>
+    <div ref={root} className="study-text" style={{ textAlign: align }}>
       <Markdown
         remarkPlugins={[remarkGfm, [remarkMasks, { masks }]]}
         components={{

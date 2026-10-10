@@ -20,6 +20,7 @@ const ACTIONS = {
   'move-card': '카드 순서 변경',
   'transfer-cards': '카드 다른 셋으로 이동',
   'admin-view-deck': '관리자 비공개 셋 열람',
+  'club-visit': '비밀 클럽 입장',
   'admin-kick': '계정 강퇴',
   'admin-unban': '강퇴 해제',
   'login-banned': '강퇴된 계정 로그인 시도',

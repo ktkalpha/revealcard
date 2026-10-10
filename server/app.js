@@ -2,6 +2,7 @@ import { emptyProgress, applyProgress, validOperation, migrateProgress } from '.
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
 import { classificationError } from '../src/lib/classification.js'
@@ -13,6 +14,7 @@ import { createStore } from './store.js'
 import { createPets } from './pets.js'
 import { createImages } from './images.js'
 import { createActivity } from './activity.js'
+import { createGrader } from './grader.js'
 
 const hashPassword = promisify(scrypt)
 const MAX_BODY = 25 * 1024 * 1024
@@ -36,6 +38,9 @@ const contentTypes = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.webp': 'image/webp',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
   '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
 }
@@ -117,10 +122,22 @@ const beginEdit = (data, deck, user, expected) => {
   data.revisions ||= {}
   data.revisions[deck.id] ||= [snapshot(deck, null, 'initial')]
 }
-const finishEdit = (data, deck, user, action) => {
+// Autosave sends a card every few seconds while someone types. Those saves still
+// bump the version (it guards against overwriting someone else's edit), but one
+// person editing one card in a sitting is kept as a single history entry.
+const MERGE_WINDOW = 10 * 60 * 1000
+const finishEdit = (data, deck, user, action, cardId) => {
   deck.version = (deck.version || 0) + 1
-  data.revisions[deck.id].push(snapshot(deck, user, action))
+  const history = data.revisions[deck.id]
+  const entry = { ...snapshot(deck, user, action), ...(cardId ? { cardId } : {}) }
+  const last = history.at(-1)
+  const merge = cardId && action === 'edit-card' && history.length > 1 && last.action === 'edit-card' &&
+    last.cardId === cardId && last.editor === entry.editor &&
+    Date.parse(entry.timestamp) - Date.parse(last.timestamp) < MERGE_WINDOW
+  if (merge) history[history.length - 1] = entry
+  else history.push(entry)
 }
+const historyCount = (data, deck) => data.revisions?.[deck.id]?.length || 1
 const ownerName = (data, deck) => data.users.find((owner) => owner.id === deck.ownerId)?.username
 const visibleDecks = (data, user) => [
   ...data.decks
@@ -131,6 +148,7 @@ const visibleDecks = (data, user) => [
       canEdit: deck.visibility === 'public' || deck.ownerId === user?.id,
       canManage: deck.ownerId === user?.id,
       version: deck.version || 0,
+      historyCount: historyCount(data, deck),
     })),
   // Admins see other users' private sets listed without cards; opening one goes
   // through /api/admin/decks/:id so every read is written to the activity log.
@@ -163,7 +181,7 @@ async function jsonBody(req) {
   }
 }
 
-export async function createApp({ dataFile, distDir, secureCookies = false }) {
+export async function createApp({ dataFile, distDir, clubDir = resolve(dirname(fileURLToPath(import.meta.url)), '../club'), secureCookies = false, grader = createGrader() }) {
   const store = await createStore(dataFile)
   const pets = createPets(resolve(dirname(dataFile), 'pets'))
   const images = createImages(resolve(dirname(dataFile), 'images'))
@@ -175,10 +193,71 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
   const cookie = (token, maxAge) =>
     `rc_session=${token}; Path=/; HttpOnly; SameSite=Lax${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}${secureCookies ? '; Secure' : ''}`
 
+  // Kicked accounts lose their sessions, but checking here also covers a race with an open request.
+  const lookup = (req) => {
+    const token = /(?:^|;\s*)rc_session=([^;]+)/.exec(req.headers.cookie || '')?.[1]
+    const key = sessionKey(token)
+    const session = key ? store.read().sessions?.[key] : null
+    const sessionUser = liveSession(session)
+      ? store.read().users.find((item) => item.id === session.userId)
+      : null
+    return { key, user: sessionUser?.banned ? null : sessionUser }
+  }
+  const clientIp = (req) => {
+    // Behind the Cloudflare tunnel every request arrives from loopback.
+    const remote = req.socket.remoteAddress || ''
+    return (/^(?:::ffff:)?127\.|^::1$/.test(remote) && req.headers['cf-connecting-ip']) || remote
+  }
+
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost')
       const path = url.pathname
+      // The secret club is a separate static app under /club/, only for signed-in members.
+      // It lives outside dist/ so the public static handler below can never serve it.
+      if (path === '/club' || path.startsWith('/club/')) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, '허용되지 않은 요청이에요.')
+        const member = lookup(req).user
+        const front = path === '/club' || path === '/club/'
+        if (!member) {
+          // Signed-out visitors land on the main site; files behind the page just look missing.
+          if (front) {
+            res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store', 'Cloudflare-CDN-Cache-Control': 'no-store' })
+            res.end()
+            return
+          }
+          fail(404, '파일을 찾을 수 없어요.')
+        }
+        if (path === '/club') {
+          res.writeHead(308, { Location: '/club/', 'Cache-Control': 'no-store' })
+          res.end()
+          return
+        }
+        let relative
+        try { relative = front ? 'index.html' : decodeURIComponent(path.slice('/club/'.length)) } catch { fail(404, '파일을 찾을 수 없어요.') }
+        const root = resolve(clubDir)
+        const file = resolve(root, relative)
+        const target = file.startsWith(root + sep)
+          ? await stat(file).then((info) => info.isFile() ? file : null).catch(() => null)
+          : null
+        if (!target) fail(404, '파일을 찾을 수 없어요.')
+        const ip = clientIp(req)
+        activity.touch(member, ip, path)
+        if (front && req.method === 'GET') activity.record({ action: 'club-visit', username: member.username, ip })
+        res.writeHead(200, {
+          'Content-Type': contentTypes[extname(file)] || 'application/octet-stream',
+          'Content-Length': (await stat(file)).size,
+          // Members only: keep it out of shared caches, the Cloudflare edge and search engines.
+          'Cache-Control': front ? 'private, no-store' : 'private, max-age=3600',
+          'Cloudflare-CDN-Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Robots-Tag': 'noindex, nofollow',
+          'Referrer-Policy': 'no-referrer',
+        })
+        if (req.method === 'HEAD') res.end()
+        else res.end(await readFile(file))
+        return
+      }
       if (path === '/api/app-update' && ['GET', 'HEAD'].includes(req.method)) {
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
@@ -218,17 +297,8 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`)
           fail(403, '다른 출처의 요청은 허용되지 않아요.')
       }
-      const token = /(?:^|;\s*)rc_session=([^;]+)/.exec(req.headers.cookie || '')?.[1]
-      const key = sessionKey(token)
-      const session = key ? store.read().sessions?.[key] : null
-      const sessionUser = liveSession(session)
-        ? store.read().users.find((item) => item.id === session.userId)
-        : null
-      // Kicked accounts lose their sessions, but checking here also covers a race with an open request.
-      const user = sessionUser?.banned ? null : sessionUser
-      // Behind the Cloudflare tunnel every request arrives from loopback.
-      const remote = req.socket.remoteAddress || ''
-      const ip = (/^(?:::ffff:)?127\.|^::1$/.test(remote) && req.headers['cf-connecting-ip']) || remote
+      const { key, user } = lookup(req)
+      const ip = clientIp(req)
       const record = (action, extra = {}) => activity.record({ action, username: user?.username || null, ip, ...extra })
       if (!path.startsWith('/api/images/')) activity.touch(user, ip, path)
       if (path.startsWith('/api/admin/decks/') && req.method === 'GET') {
@@ -334,6 +404,25 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
         const { image } = await jsonBody(req)
         const saved = await images.save(image)
         send(res, 201, { url: saved.url })
+        return
+      }
+      // Hard mode asks here only for longer answers its local check could not accept.
+      if (path === '/api/grade' && req.method === 'POST') {
+        if (!user) fail(401, '로그인이 필요해요.')
+        if (!grader.enabled()) fail(503, '의미 채점을 쓸 수 없어요.')
+        const input = await jsonBody(req)
+        if (typeof input?.answer !== 'string' || typeof input?.input !== 'string' || !input.answer.trim() || !input.input.trim() ||
+          input.answer.length > 500 || input.input.length > 1000)
+          fail(400, '채점할 답을 확인해 주세요.')
+        let result
+        try {
+          result = await grader.grade(user.id, input.answer.trim(), input.input.trim())
+        } catch {
+          result = { error: 502 }
+        }
+        if (result.error === 429) fail(429, '채점 요청이 너무 많아요. 잠시 뒤에 다시 해 주세요.')
+        if (result.error) fail(result.error === 503 ? 503 : 502, '의미 채점을 하지 못했어요.')
+        send(res, 200, result)
         return
       }
       if (path === '/api/bootstrap' && req.method === 'GET') {
@@ -551,7 +640,7 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
             if (index < 0) fail(404, '카드를 찾을 수 없어요.')
             if (req.method === 'DELETE') deck.cards.splice(index, 1)
             else savedCards = [deck.cards[index] = { ...cardInput(body), id: parts[4] }]
-            finishEdit(data, deck, user, req.method === 'DELETE' ? 'delete-card' : 'edit-card')
+            finishEdit(data, deck, user, req.method === 'DELETE' ? 'delete-card' : 'edit-card', parts[4])
           })
         } else fail(404, '요청을 찾을 수 없어요.')
         const deckName = store.read().decks.find((item) => item.id === id)?.name || nameBefore
@@ -569,7 +658,8 @@ export async function createApp({ dataFile, distDir, secureCookies = false }) {
           ...(['edit-card', 'delete-card', 'move-card'].includes(action) ? { cardId: parts[4] } : {}),
         })
         // Editors autosave repeatedly, so they need the new version and the stored cards.
-        send(res, 200, { ok: true, version: store.read().decks.find((item) => item.id === id)?.version, ...(savedCards ? { cards: savedCards } : {}) })
+        const saved = store.read().decks.find((item) => item.id === id)
+        send(res, 200, { ok: true, version: saved?.version, historyCount: saved && historyCount(store.read(), saved), ...(savedCards ? { cards: savedCards } : {}) })
         return
       }
       fail(404, '요청을 찾을 수 없어요.')

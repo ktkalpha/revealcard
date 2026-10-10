@@ -22,7 +22,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/club(?:\/|$)/],
         runtimeCaching: [{
           urlPattern: ({ url }) => /^\/api\/images\/[0-9a-f-]{36}\.(?:png|jpg|webp)$/.test(url.pathname),
           handler: 'CacheFirst',

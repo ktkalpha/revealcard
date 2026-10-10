@@ -26,7 +26,7 @@ export function tapTokens(body) {
       }
       // Leave Markdown and punctuation around a word outside the cover.
       const lead = /^[*_`~"'“‘(<[]+/.exec(text)?.[0].length || 0
-      const trail = /[*_`~"'”’)>\],.!?:;]+$/.exec(text.slice(lead))?.[0].length || 0
+      const trail = /[*_`~"'”’)>\],.!?:;^]+$/.exec(text.slice(lead))?.[0].length || 0
       const core = text.slice(lead, text.length - trail)
       if (!core) {
         tokens.push({ type: 'gap', text, start, end: start + text.length })

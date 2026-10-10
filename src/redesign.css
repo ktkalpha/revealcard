@@ -498,3 +498,54 @@ body, body *, input, textarea, button, select, code, pre { font-family: 'KoPubWo
 .admin-images img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .admin-images small { color: var(--muted); font-size: 10.5px; }
 .admin-images .button { margin-top: 4px; }
+a.nav-link { text-decoration: none; }
+
+/* ---------- Notes written above a word: 단어^[[필기]] ---------- */
+/* The word keeps its own width; the note floats above it in the space the top margin reserves. */
+.annot { --annot-room: 30px; position: relative; display: inline-block; max-width: 100%; margin-top: var(--annot-room); text-indent: 0; }
+.annot-base { text-decoration: underline; text-decoration-color: color-mix(in srgb, #2f55b4 55%, transparent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.annot-note { position: absolute; left: 0; bottom: 100%; z-index: 1; width: max-content; max-width: min(15em, 100vw - 48px); margin-bottom: 1px; font-size: .74em; line-height: 1.3; text-align: left; }
+.annot-note .mask-wrap { display: inline-flex; max-width: 100%; vertical-align: bottom; }
+.annot .annot-note .mask { min-height: 26px; min-width: 34px; padding: 1px 7px; margin: 0; border-radius: 6px; line-height: 1.3; white-space: normal; text-align: left; }
+.annot .annot-note .mask.revealed { color: #2f55b4; background: color-mix(in srgb, #2f55b4 7%, var(--paper)); border-color: color-mix(in srgb, #2f55b4 25%, var(--paper)); }
+.annot .annot-note .mask-question { font-size: 13px; }
+.annot-note .mask-wrap { position: relative; }
+.annot .annot-note .mask-mark { position: absolute; top: -9px; right: -9px; z-index: 1; min-width: 20px; min-height: 20px; width: 20px; height: 20px; margin: 0; border-radius: 50%; }
+@media (hover: none) and (pointer: coarse) {
+  .annot { --annot-room: 34px; }
+  .annot .annot-note .mask { min-height: 30px; min-width: 40px; }
+  .annot .annot-note .mask-mark { min-width: 24px; min-height: 24px; width: 24px; height: 24px; top: -11px; right: -11px; }
+}
+
+/* ---------- Hard (서술형) mode ---------- */
+.hard-toggle[aria-pressed="true"] { box-shadow: none; }
+.hard-answer { display: grid; gap: 10px; width: 100%; }
+.hard-answer form { display: grid; gap: 8px; }
+.hard-answer label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14px; font-weight: 700; color: var(--ink); }
+.hard-answer label span { font-size: 12px; font-weight: 400; color: var(--muted); }
+.hard-answer textarea { width: 100%; min-height: 64px; padding: 12px 14px; border: 1.5px solid var(--ui-line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
+.hard-answer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hard-actions { display: flex; justify-content: space-between; gap: 8px; }
+.hard-actions .button:last-child { flex: 1; max-width: 220px; }
+.hard-feedback { padding: 12px 14px; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--paper); }
+.hard-feedback.correct { border-color: #9cc7a4; background: #f1f8f1; }
+.hard-feedback.close { border-color: #e2c77d; background: #fcf7e8; }
+.hard-feedback.wrong, .hard-feedback.skip { border-color: #e2a69b; background: #fbefec; }
+.hard-feedback-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.hard-feedback-head strong { font-size: 15px; }
+.hard-feedback.correct strong { color: #2f6b3a; }
+.hard-feedback.close strong { color: #86600f; }
+.hard-feedback.wrong strong, .hard-feedback.skip strong { color: #8d3a2e; }
+.hard-feedback-head span { font-size: 12px; color: var(--muted); }
+.hard-feedback p { margin: 2px 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.hard-feedback p span { display: inline-block; min-width: 3.2em; font-size: 12px; color: var(--muted); }
+.hard-feedback .button { margin-top: 4px; padding-left: 0; }
+.hard-answer.floating { position: fixed; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 40; width: min(600px, calc(100vw - 24px)); max-height: 60vh; overflow-y: auto; transform: translateX(-50%); padding: 12px; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--paper); box-shadow: 0 12px 40px rgb(0 0 0 / 18%); }
+.hard-answer.floating .hard-feedback { padding: 8px 12px; }
+.hard-answer.floating .hard-feedback p { font-size: 13px; }
+.hard-answering { padding-bottom: 300px; }
+.hard-answering .mask, .hard-answering .occlusion-box { scroll-margin: 90px 0 300px; }
+.hard-tally { margin: 0 0 6px; text-align: center; font-size: 13px; color: var(--muted); }
+@media (hover: none) and (pointer: coarse) {
+  .hard-actions .button { min-height: 48px; }
+}

@@ -5,3 +5,6 @@ dist/
 
 worker/jobs/
 worker/logs/
+
+# Members-only club app: served from the server only, never published with the code.
+club/

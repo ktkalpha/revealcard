@@ -90,14 +90,55 @@ export function remarkMasks({ masks }) {
         pieces.push({ type: 'text', value: child.value.slice(start) })
       return pieces
     })
+    if (node.type !== 'link') node.children = annotate(node.children)
   }
   return visit
+}
+
+const isMaskLink = (node) => node?.type === 'link' && node.url?.startsWith('#revealcard-mask-')
+const span = (className, children) => ({
+  type: 'annotation', children, data: { hName: 'span', hProperties: { className: [className] } },
+})
+
+// `단어^[[필기]]` writes a covered note above the word, like pen notes on a passage.
+// The word is the last word before `^`, or the whole bold/italic run right before it.
+function annotate(children) {
+  const out = []
+  for (const child of children) {
+    const prev = out.at(-1)
+    if (!isMaskLink(child) || prev?.type !== 'text' || !prev.value.endsWith('^')) {
+      out.push(child)
+      continue
+    }
+    const text = prev.value.slice(0, -1)
+    let base
+    if (!text && ['strong', 'emphasis', 'delete'].includes(out.at(-2)?.type)) {
+      out.pop()
+      base = out.pop()
+    } else {
+      const word = /\S+$/.exec(text)
+      if (!word) {
+        prev.value = text
+        out.push(child)
+        continue
+      }
+      prev.value = text.slice(0, word.index)
+      if (!prev.value) out.pop()
+      base = { type: 'text', value: word[0] }
+    }
+    out.push(span('annot', [span('annot-base', [base]), span('annot-note', [child])]))
+  }
+  return out
 }
 
 const excerptParser = remark().use(remarkGfm)
 
 export function markdownExcerpt(body) {
-  const text = parseBody(body).map((part) => part.text).join('')
+  const parts = parseBody(body)
+  const text = parts
+    .map((part, index) => part.id === undefined && parts[index + 1]?.id !== undefined && part.text.endsWith('^')
+      ? `${part.text.slice(0, -1)} ` : part.text)
+    .join('')
   const read = (node) => {
     if (node.type === 'text' || node.type === 'code' || node.type === 'inlineCode')
       return node.value
