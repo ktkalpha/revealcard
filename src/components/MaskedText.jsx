@@ -7,7 +7,7 @@ import { maskKey } from '../lib/masks'
 import { CARD_IMAGE_URL } from '../lib/images'
 
 export default function MaskedText({
-  body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong,
+  body, align = 'center', revealed, onToggle, focusIds, wrongIds, onMarkWrong, activeId,
   maskParts, maskOrdinalStart = 0,
 }) {
   const prepared = prepareMarkdown(body)
@@ -22,7 +22,8 @@ export default function MaskedText({
       <span key={part.id} className="mask-wrap">
         <button
           type="button"
-          className={`mask ${visible ? 'revealed' : ''} ${wrong ? 'mask-wrong' : ''}`}
+          className={`mask ${visible ? 'revealed' : ''} ${wrong ? 'mask-wrong' : ''} ${focused && part.id === activeId ? 'mask-active' : ''}`}
+          data-mask-id={part.id}
           aria-pressed={visible}
           aria-label={visible ? `${part.text}, 다시 가리기` : `${ordinal}번째 빈칸 정답 보기`}
           onClick={() => focused && onToggle(part.id)}

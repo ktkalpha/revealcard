@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react'
 import { occlusionData } from '../lib/occlusion'
 
-export default function OcclusionImage({ body, alt, revealed, onToggle, focusIds }) {
+export default function OcclusionImage({ body, alt, revealed, onToggle, focusIds, activeId }) {
   const data = useMemo(() => occlusionData(body), [body])
   return (
     <div className="occlusion-image" data-no-swipe>
@@ -13,7 +13,8 @@ export default function OcclusionImage({ body, alt, revealed, onToggle, focusIds
           <button
             type="button"
             key={box.id}
-            className={`occlusion-box ${visible ? 'revealed' : ''}`}
+            className={`occlusion-box ${visible ? 'revealed' : ''} ${box.id === activeId ? 'mask-active' : ''}`}
+            data-mask-id={box.id}
             style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` }}
             aria-pressed={visible}
             aria-label={`${index + 1}번째 가리개${visible && box.label ? `: ${box.label}` : ''} ${visible ? '다시 가리기' : '보기'}`}

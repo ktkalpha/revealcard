@@ -24,7 +24,7 @@ import MatchingGame from './MatchingGame'
 import ClassificationGame from './ClassificationGame'
 import OcclusionImage from './OcclusionImage'
 import StudyPets from './StudyPet'
-import { masksIn, wrongMaskIds } from '../lib/masks'
+import { masksIn, maskKey, wrongMaskIds } from '../lib/masks'
 import { occlusionMasks } from '../lib/occlusion'
 import { isStructured } from '../lib/editing'
 
@@ -62,6 +62,9 @@ export default function Study({
   const [reviewMode, setReviewMode] = useState('all')
   const [focusByCard, setFocusByCard] = useState({})
   const [drag, setDrag] = useState(0)
+  // The blank the keyboard acts on (↑↓ to move, Enter to toggle, X to mark wrong).
+  const [active, setActive] = useState(null)
+  const completionActions = useRef(null)
   const pointer = useRef(null)
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
@@ -77,6 +80,11 @@ export default function Study({
     .filter((mask) => !focusIds || focusIds.has(mask.id))
     .map((mask) => mask.id)
   const allVisible = isGame ? matchingDone : maskIds.every((id) => revealed.has(id))
+  const canMarkWrong = !!onMarkWrong && card?.kind !== 'occlusion' && !isGame
+  const cardWrongKeys = new Set(wrongMasks[card?.id] || [])
+  const wrongCount = canMarkWrong
+    ? cardMasks.filter((mask) => maskIds.includes(mask.id) && cardWrongKeys.has(maskKey(mask))).length
+    : 0
   const reviewIds = deck.cards
     .filter((c) => ratings[c.id] === 'again')
     .map((c) => c.id)
@@ -95,18 +103,56 @@ export default function Study({
 
   useEffect(() => {
     setRevealed(new Set())
+    setActive(null)
     setMatchingDone(false)
     if (card) onPosition(card.id)
   }, [card?.id])
-  const toggle = (id) =>
+  useEffect(() => {
+    if (active !== null)
+      document.querySelector(`[data-mask-id="${CSS.escape(String(active))}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+  useEffect(() => {
+    if (complete) completionActions.current?.querySelector('button')?.focus()
+  }, [complete])
+  const toggle = (id) => {
+    setActive(id)
     setRevealed((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+  }
+  const reveal = (id) => {
+    setActive(id)
+    setRevealed((prev) => new Set([...prev, id]))
+  }
   const revealNext = () => {
     const id = maskIds.find((id) => !revealed.has(id))
-    if (id !== undefined) setRevealed((prev) => new Set([...prev, id]))
+    if (id !== undefined) reveal(id)
+  }
+  const activeId = maskIds.includes(active) ? active : null
+  const selectMask = (step) => {
+    if (!maskIds.length) return
+    const index = maskIds.indexOf(activeId)
+    const next = index < 0
+      ? (step > 0 ? 0 : maskIds.length - 1)
+      : Math.max(0, Math.min(maskIds.length - 1, index + step))
+    setActive(maskIds[next])
+  }
+  // X: toggle the wrong mark on the selected blank. A hidden blank is opened
+  // and marked at once — not knowing it is what makes it wrong.
+  const toggleWrong = () => {
+    if (!canMarkWrong || !maskIds.length) return
+    const id = activeId ?? maskIds.find((id) => !revealed.has(id)) ?? maskIds[0]
+    const mask = cardMasks.find((item) => item.id === id)
+    const key = maskKey(mask)
+    if (!revealed.has(id)) {
+      reveal(id)
+      onMarkWrong(card.id, key, true)
+    } else {
+      setActive(id)
+      onMarkWrong(card.id, key, !cardWrongKeys.has(key))
+    }
   }
   const move = (step) => {
     if (complete) return
@@ -164,13 +210,30 @@ export default function Study({
         move(1)
       }
       if (!complete && card && !isGame) {
-        if (e.code === 'Space' && !e.target.closest('button')) {
+        // e.code keeps letter shortcuts working while a Korean IME is on.
+        const code = e.code
+        const onControl = e.target.closest('button,a,select')
+        if (code === 'Space' && !onControl) {
           e.preventDefault()
           allVisible ? rate('known') : revealNext()
         }
-        if (e.key === '1') rate('again')
-        if (e.key === '2') rate('known')
-        if (e.key.toLowerCase() === 'r') setRevealed(new Set())
+        if (code === 'Enter' && !onControl && maskIds.length) {
+          e.preventDefault()
+          activeId !== null ? toggle(activeId) : revealNext()
+        }
+        if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && maskIds.length) {
+          e.preventDefault()
+          selectMask(e.key === 'ArrowDown' ? 1 : -1)
+        }
+        if (code === 'Digit1' || code === 'Numpad1') rate('again')
+        if (code === 'Digit2' || code === 'Numpad2') rate('known')
+        if (code === 'KeyX') toggleWrong()
+        if (code === 'KeyA' && maskIds.length)
+          setRevealed(allVisible ? new Set() : new Set(maskIds))
+        if (code === 'KeyR') {
+          setRevealed(new Set())
+          setActive(null)
+        }
       }
     }
     window.addEventListener('keydown', keydown)
@@ -346,7 +409,7 @@ export default function Study({
                   <span>건너뛰었어요</span>
                 </div>
               </div>
-              <div className="completion-actions">
+              <div className="completion-actions" ref={completionActions}>
                 {wrongReviewIds.length > 0 && (
                   <Button
                     onClick={() => start(wrongReviewIds, 'masks')}
@@ -435,16 +498,17 @@ export default function Study({
                   </div>
                   <div className={wide ? 'note-study-content' : 'sheet-content'} key={card.id}>
                     <h1 style={wide ? undefined : { textAlign }}>{card.title}</h1>
-                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
+                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={toggle} activeId={activeId} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
                     ) : card.kind === 'occlusion' ? (
-                      <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={toggle} focusIds={focusIds} />
+                      <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={toggle} focusIds={focusIds} activeId={activeId} />
                     ) : (
                       <MaskedText
                         body={card.body}
                         align={textAlign}
                         revealed={revealed}
                         onToggle={toggle}
+                        activeId={activeId}
                         focusIds={focusIds}
                         wrongIds={new Set(wrongMasks[card.id] || [])}
                         onMarkWrong={(id, wrong) => onMarkWrong(card.id, id, wrong)}
@@ -454,7 +518,7 @@ export default function Study({
                   {!isGame && <div className="sheet-bottom" data-no-swipe>
                     <span aria-live="polite">
                       {maskIds.length
-                        ? `${revealed.size} / ${maskIds.length}개 공개`
+                        ? `${maskIds.filter((id) => revealed.has(id)).length} / ${maskIds.length}개 공개${wrongCount ? ` · 틀림 ${wrongCount}` : ''}`
                         : '내용을 떠올려 보세요'}
                     </span>
                     {maskIds.length > 0 && (
@@ -501,7 +565,9 @@ export default function Study({
                         </Button>
                       </div>
                       <p className="action-hint">
-                        얼마나 기억났나요? 선택하면 다음 카드로 넘어가요.
+                        {canMarkWrong && maskIds.length
+                          ? <>틀린 빈칸은 옆의 ✕로 표시해 두고, 기억 상태를 선택하세요. <kbd>X</kbd></>
+                          : '얼마나 기억났나요? 선택하면 다음 카드로 넘어가요.'}
                       </p>
                     </>
                   )}
@@ -524,7 +590,11 @@ export default function Study({
                   <Keyboard size={14} />
                   <span>← → 카드 이동</span>
                   <span>Space 빈칸 보기</span>
+                  {maskIds.length > 0 && <span>↑ ↓ 빈칸 선택 · Enter 열기/닫기</span>}
+                  {canMarkWrong && maskIds.length > 0 && <span>X 틀림 표시</span>}
+                  {maskIds.length > 0 && <span>A 모두 보기</span>}
                   <span>R 다시 가리기</span>
+                  <span>1 · 2 평가</span>
                 </p>}
               </>
             )

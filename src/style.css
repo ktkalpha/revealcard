@@ -673,6 +673,11 @@ button svg {
 .mask-wrong.revealed {
   border-color: #cb8b7c;
 }
+.mask.mask-active,
+.occlusion-box.mask-active {
+  outline: 2px solid var(--accent-ink, #4b5a3f);
+  outline-offset: 2px;
+}
 .sheet-bottom {
   border-top: 1px solid var(--tone-eceee5, #eceee5);
   padding-top: 9px;
