@@ -29,3 +29,11 @@ test('short answers and numbers must match exactly', () => {
   assert.equal(verdict('4-4-2', '4-4-3'), 'wrong')
   assert.equal(verdict('20', '24'), 'wrong')
 })
+
+test('a number inside a sentence is graded with the sentence, not as an exact-number answer', () => {
+  const answer = '3.1운동 이후 일제가 통치 방식을 무단 통치에서 문화 정치로 바꾸었다.'
+  assert.equal(verdict(answer, '일본이 통치 방식을 무단 통치에서 문화 정치로 바꾸었다.'), 'close')
+  assert.equal(verdict(answer, '6.10만세운동 이후 일제가 통치 방식을 무단 통치에서 문화 정치로 바꾸었다.'), 'close')
+  assert.equal(verdict(answer, '민족 말살 통치를 실시했다'), 'wrong')
+  assert.equal(verdict('3장 6구 45자', '3장 6구 46자'), 'wrong')
+})

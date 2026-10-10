@@ -66,16 +66,23 @@ function bestWithin(part, input) {
 }
 
 const numbers = (text) => String(text).replace(/\D/g, '')
+const withoutBrackets = (text) => String(text || '').replace(/\([^)]*\)/g, '')
+
+// Short answers that hinge on a number (4-4-2, 9행, 3장 6구 45자). In a sentence
+// such as "3.1운동 이후 …" the number is only part of it and is graded like the rest.
+export const isNumberAnswer = (answer) => /\d/.test(answer) && normalize(withoutBrackets(answer)).length <= 10
 
 export function grade(answer, input) {
   const raw = String(answer || '')
   const typed = normalize(input)
   if (!typed) return { verdict: 'wrong', score: 0 }
   // "같은 부모(혈육)" also accepts "같은 부모"; the bracketed part is extra detail.
-  const variants = [...new Set([raw, raw.replace(/\([^)]*\)/g, '')].map(normalize))].filter(Boolean)
-  // Numbers carry meaning (4-4-2, 9행), so a different number is never close enough.
-  if (numbers(raw) && numbers(raw) !== numbers(input) && numbers(raw.replace(/\([^)]*\)/g, '')) !== numbers(input))
+  const variants = [...new Set([raw, withoutBrackets(raw)].map(normalize))].filter(Boolean)
+  // For number answers a different number is never close enough.
+  if (isNumberAnswer(raw) && numbers(raw) !== numbers(input) && numbers(withoutBrackets(raw)) !== numbers(input))
     return { verdict: 'wrong', score: 0 }
+  // In a sentence, a number that is written but different (3.1 vs 6.10) keeps it from being fully right.
+  const wrongNumber = !isNumberAnswer(raw) && numbers(input) && numbers(raw) !== numbers(input)
   let score = 0
   for (const target of variants) {
     if (target === typed) return { verdict: 'correct', score: 1 }
@@ -92,5 +99,6 @@ export function grade(answer, input) {
   if (parts.length > 1)
     score = Math.max(score, parts.reduce((sum, part) => sum + (part.length <= 2 ? (typed.includes(part) ? 1 : 0) : bestWithin(part, typed)), 0) / parts.length)
   score = Math.round(score * 100) / 100
+  if (wrongNumber) score = Math.min(score, CORRECT - 0.01)
   return { verdict: score >= CORRECT ? 'correct' : score >= CLOSE ? 'close' : 'wrong', score }
 }

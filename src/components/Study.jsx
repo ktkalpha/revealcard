@@ -29,7 +29,7 @@ import HardAnswer from './HardAnswer'
 import { masksIn, maskKey, wrongMaskIds } from '../lib/masks'
 import { occlusionMasks } from '../lib/occlusion'
 import { isStructured } from '../lib/editing'
-import { grade, normalize } from '../lib/grade'
+import { grade, isNumberAnswer, normalize } from '../lib/grade'
 import { api } from '../lib/api'
 
 const HARD_KEY = 'revealcard-hard-mode'
@@ -185,7 +185,7 @@ export default function Study({
     const answer = cardMasks.find((mask) => mask.id === id).text
     let result = grade(answer, input)
     let source = 'local'
-    if (result.verdict !== 'correct' && normalize(answer).length >= 4 && !/\d/.test(answer) && navigator.onLine) {
+    if (result.verdict !== 'correct' && normalize(answer).length >= 4 && !isNumberAnswer(answer) && navigator.onLine) {
       setGrading(true)
       try {
         const checked = await api('/api/grade', { method: 'POST', body: { answer, input } })
