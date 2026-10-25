@@ -5,23 +5,22 @@ import {
   BookOpen,
   Check,
   CheckCheck,
-  ChevronDown,
   Eye,
   EyeOff,
-  Keyboard,
+  Layers3,
   Pencil,
   PenLine,
   Plus,
   RotateCcw,
   Shuffle,
-  Sparkles,
-  Target,
-  Layers3,
+  Keyboard,
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import PassageText from './PassageText'
 import MatchingGame from './MatchingGame'
+// The world map data is large, so the map game loads on first use.
+const MapQuizGame = React.lazy(() => import('./MapQuizGame'))
 import ClassificationGame from './ClassificationGame'
 import OcclusionImage from './OcclusionImage'
 import StudyPets from './StudyPet'
@@ -39,12 +38,12 @@ const readHard = () => {
 
 export default function Study({
   deck,
-  decks,
+  initialMode = 'all',
   ratings,
   wrongMasks,
   onMarkWrong,
   position,
-  onDeck,
+  onHome,
   onRate,
   onPosition,
   onEdit,
@@ -55,10 +54,14 @@ export default function Study({
   onHighlight,
   companion,
   onPetSettings,
+  onHelp,
 }) {
-  const [queue, setQueue] = useState(() => deck.cards.map((c) => c.id))
+  const startsWithReview = initialMode === 'cards'
+  const [queue, setQueue] = useState(() => startsWithReview
+    ? deck.cards.filter((c) => ratings[c.id] === 'again').map((c) => c.id)
+    : deck.cards.map((c) => c.id))
   const [cursor, setCursor] = useState(() =>
-    Math.max(
+    startsWithReview ? 0 : Math.max(
       0,
       deck.cards.findIndex((c) => c.id === position),
     ),
@@ -68,7 +71,7 @@ export default function Study({
   const [revealed, setRevealed] = useState(new Set())
   const [results, setResults] = useState({})
   const [complete, setComplete] = useState(false)
-  const [reviewMode, setReviewMode] = useState('all')
+  const [reviewMode, setReviewMode] = useState(startsWithReview ? 'cards' : 'all')
   const [focusByCard, setFocusByCard] = useState({})
   const [drag, setDrag] = useState(0)
   // The blank the keyboard acts on (↑↓ to move, Enter to toggle, X to mark wrong).
@@ -84,9 +87,9 @@ export default function Study({
   const ignoreClick = useRef(false)
   const card = deck.cards.find((c) => c.id === queue[cursor])
   currentCard.current = card?.id
-  const isGame = ['matching','classification'].includes(card?.kind)
+  const isGame = ['matching','classification','mapquiz'].includes(card?.kind)
   // Notes are ordinary cards now; only passages and photo games keep a page layout.
-  const wide = ['passage','classification'].includes(card?.kind)
+  const wide = ['passage','classification','mapquiz'].includes(card?.kind)
   const textAlign = card?.align || (isStructured(card?.body || '') ? 'left' : 'center')
   const cardMasks = card?.kind === 'occlusion' ? occlusionMasks(card.body) : masksIn(card?.body || '')
   const focusIds = reviewMode === 'masks'
@@ -113,8 +116,6 @@ export default function Study({
   const doneCount = Object.keys(results).length
   const againIds = queue.filter((id) => results[id] === 'again')
   const unmarkedIds = queue.filter((id) => !results[id])
-  const rememberedCount = deck.cards.filter((item) => ratings[item.id] === 'known').length
-  const rememberedPercent = deck.cards.length ? Math.round(rememberedCount / deck.cards.length * 100) : 0
   const knownCount = Object.values(results).filter((v) => v === 'known').length
   // Occlusion boxes take part only when every box has a label to type.
   const hardActive = hard && !isGame && maskIds.length > 0 && cardMasks.every((mask) => mask.text.trim())
@@ -122,6 +123,8 @@ export default function Study({
     : active !== null && maskIds.includes(active) && !revealed.has(active) ? active
       // After answering, carry on from that blank rather than jumping back to the top.
       : [...maskIds.slice(maskIds.indexOf(active) + 1), ...maskIds].find((id) => !revealed.has(id)) ?? null
+  // 서술형 on a card with blanks: question on the left, answers on the right (wide screens).
+  const split = hardActive && !complete
   const hardTally = Object.values(hardResults).reduce((tally, verdict) => ({ ...tally, [verdict]: (tally[verdict] || 0) + 1 }), {})
 
   useEffect(() => {
@@ -365,99 +368,77 @@ export default function Study({
   return (
     <main
       id="main"
-      className={`study-page${card?.kind === 'classification' ? ' classification-study-page' : ''}${wide ? ' note-study-page' : ''}${hardActive && hardTarget !== null && !complete ? ' hard-answering' : ''}`}
+      className={`study-page${split ? ' hard-split' : ''}${card?.kind === 'classification' ? ' classification-study-page' : ''}${wide ? ' note-study-page' : ''}${hardActive && hardTarget !== null && !complete ? ' hard-answering' : ''}`}
     >
       <div className="study-layout">
-        <aside className="study-overview" aria-label="학습 현황">
-          <p className="workspace-eyebrow"><Target size={14} /> MY PROGRESS</p>
-          <h2>한 장씩,<br /><span>더 선명하게.</span></h2>
-          <p className="overview-description">가리고, 떠올리고, 기억하기.<br />오늘도 한 장씩 채워보세요.</p>
-          <div className="memory-summary">
-            <div className="memory-summary-label"><Target size={16} /><span>나의 기억 현황</span><strong>{rememberedPercent}%</strong></div>
-            <div className="memory-meter"><span style={{ width: `${rememberedPercent}%` }} /></div>
-            <div className="memory-metrics"><div><strong>{rememberedCount}<small> / {deck.cards.length}</small></strong><span>기억한 카드</span></div><div><strong>{reviewIds.length}</strong><span>다시 볼 카드</span></div></div>
-          </div>
-          <div className="overview-tip"><span>작은 학습 팁</span><p>정답을 보기 전 잠깐 멈춰보세요.<br />떠올리는 순간, 기억이 깊어져요.</p></div>
-        </aside>
         <div className="study-workspace">
-          <div className="workspace-heading"><div><p className="workspace-eyebrow">STUDY WORKSPACE</p><h2>오늘의 학습</h2><p>정답을 떠올리는 순간, 기억이 시작돼요.</p></div><span className="workspace-status"><span />{deck.cards.length}장의 가능성</span></div>
-      <div className="study-toolbar">
-        <div className="deck-select">
-          <BookOpen size={17} />
-          <select
-            aria-label="학습할 카드 셋"
-            value={deck.id}
-            onChange={(e) => onDeck(e.target.value)}
-          >
-            {decks.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={14} />
-        </div>
-        <Button variant="ghost" size="sm" onClick={onLibrary}>
-          <Layers3 size={16} />
-          <span>카드 관리</span>
-        </Button>
-      </div>
+          <header className="study-head">
+            <Button variant="ghost" size="icon" className="study-back" aria-label="홈으로" title="홈으로" onClick={onHome}>
+              <ArrowLeft size={19} />
+            </Button>
+            <div className="study-head-title">
+              <strong>{deck.name}</strong>
+              <span aria-live="polite">
+                {reviewMode === 'cards' ? '다시 볼 카드' : reviewMode === 'masks' ? '틀린 가리개' : '전체'}
+                {deck.cards.length > 0 && queue.length > 0 && !complete && <> · {cursor + 1} / {queue.length}</>}
+              </span>
+            </div>
+            {onEdit && card && !complete && (
+              <Button variant="ghost" size="sm" className="study-head-button" aria-label="현재 카드 수정" title="현재 카드 수정" onClick={() => onEdit(card)}>
+                <Pencil size={16} /> <span>수정</span>
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="study-head-button" aria-label="카드 관리" title="카드 관리" onClick={onLibrary}>
+              <Layers3 size={16} /> <span>카드 관리</span>
+            </Button>
+          </header>
+          {deck.cards.length > 0 && (
+            <div className="study-controls">
+              <div className="segmented study-range" role="group" aria-label="학습 범위">
+                <button aria-pressed={reviewMode === 'all'} onClick={() => start(deck.cards.map((c) => c.id))}>
+                  전체 <span>{deck.cards.length}</span>
+                </button>
+                <button aria-pressed={reviewMode === 'cards'} onClick={() => start(reviewIds, 'cards')} title="‘다시 볼게요’로 표시한 카드">
+                  다시 볼 카드 <span>{reviewIds.length}</span>
+                </button>
+                <button aria-pressed={reviewMode === 'masks'} onClick={() => start(wrongReviewIds, 'masks')} title="✕로 틀림 표시한 빈칸이 있는 카드">
+                  틀린 빈칸 <span>{wrongReviewIds.length}</span>
+                </button>
+              </div>
+              <div className="study-switches">
+                <Button
+                  variant={hard ? 'default' : 'outline'}
+                  size="sm"
+                  aria-pressed={hard}
+                  title="서술형: 빈칸의 답을 직접 써서 채점해요"
+                  onClick={switchHard}
+                >
+                  <PenLine size={15} /> 서술형{hard ? ' 켜짐' : ''}
+                </Button>
+                <Button variant="outline" size="sm" onClick={shuffle} disabled={queue.length < 2} title="카드 순서 섞기">
+                  <Shuffle size={15} /> 섞기
+                </Button>
+              </div>
+            </div>
+          )}
       {!deck.cards.length ? (
         <section className="empty-state paper">
           <BookOpen size={34} strokeWidth={1.4} />
-          <h1>첫 카드를 만들어볼까요?</h1>
+          <h1>아직 카드가 없어요</h1>
           <p>기억할 내용을 적고, 중요한 부분을 가려보세요.</p>
-          <Button onClick={onAdd}>
-            <Plus size={17} /> 카드 만들기
-          </Button>
-          <Button variant="ghost" onClick={onImport}>
-            카드 셋 불러오기
-          </Button>
+          {onEdit && (
+            <Button onClick={onAdd}>
+              <Plus size={17} /> 카드 만들기
+            </Button>
+          )}
+          {onEdit && (
+            <Button variant="ghost" onClick={onImport}>
+              파일에서 불러오기
+            </Button>
+          )}
         </section>
       ) : (
         <>
-          <div className="session-bar">
-            <div className="segmented" aria-label="학습 범위">
-              <button
-                aria-pressed={reviewMode === 'all'}
-                onClick={() => start(deck.cards.map((c) => c.id))}
-              >
-                전체 <span>{deck.cards.length}</span>
-              </button>
-              <button
-                aria-pressed={reviewMode === 'cards'}
-                onClick={() => start(reviewIds, 'cards')}
-              >
-                다시 볼 카드 <span>{reviewIds.length}</span>
-              </button>
-              <button
-                aria-pressed={reviewMode === 'masks'}
-                onClick={() => start(wrongReviewIds, 'masks')}
-              >
-                틀린 가리개 <span>{wrongReviewIds.length}</span>
-              </button>
-            </div>
-            <Button
-              variant={hard ? 'default' : 'ghost'}
-              size="sm"
-              className="hard-toggle"
-              aria-pressed={hard}
-              title="Hard 모드: 빈칸의 답을 직접 써서 채점해요"
-              onClick={switchHard}
-            >
-              <PenLine size={16} /> Hard
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="카드 순서 섞기"
-              title="카드 순서 섞기"
-              onClick={shuffle}
-              disabled={queue.length < 2}
-            >
-              <Shuffle size={17} />
-            </Button>
-          </div>
           {queue.length === 0 ? (
             <section className="empty-state paper">
               <CheckCheck size={34} />
@@ -515,20 +496,14 @@ export default function Study({
                 >
                   전체 다시 학습
                 </Button>
-                <Button variant="ghost" onClick={onLibrary}>
-                  내 카드로 돌아가기
+                <Button variant="ghost" onClick={onHome}>
+                  홈으로
                 </Button>
               </div>
             </section>
           ) : (
             card && (
               <>
-                <div className="session-progress">
-                  <span aria-live="polite">
-                    {cursor + 1} <span className="muted">/ {queue.length}</span>
-                  </span>
-                  <span>{doneCount}장 확인</span>
-                </div>
                 <div
                   className="progress-track"
                   role="progressbar"
@@ -541,6 +516,7 @@ export default function Study({
                     style={{ width: `${(doneCount / queue.length) * 100}%` }}
                   />
                 </div>
+                <div className={`study-stage${split ? ' split' : ''}`}>
                 <article
                   className={wide ? 'note-study' : `card-sheet paper ${textAlign === 'left' ? 'long-card' : ''} ${drag ? 'dragging' : ''}`}
                   style={{
@@ -564,25 +540,16 @@ export default function Study({
                     }
                   }}
                 >
-                  <div className="sheet-top">
-                    <span className="overline">
-                      {isGame ? 'SPECIAL GAME' : card.kind === 'passage' ? 'PASSAGE' : 'CARD'} {String(cursor + 1).padStart(2, '0')}
-                    </span>
-                    {onEdit && (
-                      <Button
-                        data-no-swipe
-                        variant="ghost"
-                        size="icon"
-                        aria-label="현재 카드 수정"
-                        onClick={() => onEdit(card)}
-                      >
-                        <Pencil size={16} />
-                      </Button>
-                    )}
-                  </div>
+                  {(isGame || card.kind === 'passage') && (
+                    <div className="sheet-top">
+                      <span className="overline">{isGame ? '게임' : '본문'}</span>
+                    </div>
+                  )}
                   <div className={wide ? 'note-study-content' : 'sheet-content'} key={card.id}>
                     <h1 style={wide ? undefined : { textAlign }}>{card.title}</h1>
-                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={tapMask} activeId={activeId} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'matching' ? (
+                    {card.kind === 'classification' ? <ClassificationGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={()=>setMatchingDone(true)} onReset={()=>setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen}/> : card.kind === 'passage' ? <PassageText card={card} revealed={revealed} onToggle={tapMask} activeId={activeId} onHighlight={onHighlight} focusIds={focusIds} wrongIds={new Set(wrongMasks[card.id] || [])} onMarkWrong={(id,wrong)=>onMarkWrong(card.id,id,wrong)}/> : card.kind === 'mapquiz' ? (
+                      <React.Suspense fallback={<p className="muted">지도를 불러오는 중…</p>}><MapQuizGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} onAnswer={correct=>companion?.react(correct ? 'known' : 'again')} keyboardEnabled={!modalOpen} /></React.Suspense>
+                    ) : card.kind === 'matching' ? (
                       <MatchingGame key={`${card.id}-${gameVersion}`} body={card.body} onComplete={() => setMatchingDone(true)} onReset={() => setMatchingDone(false)} />
                     ) : card.kind === 'occlusion' ? (
                       <OcclusionImage body={card.body} alt={card.title} revealed={revealed} onToggle={tapMask} focusIds={focusIds} activeId={activeId} />
@@ -628,7 +595,7 @@ export default function Study({
                 </article>
                 <div className="study-dock">
                   {isGame && !matchingDone ? (
-                    <p className="action-hint">{card.kind === 'classification' ? '사진을 모두 분류하면 학습 완료를 표시할 수 있어요.' : '모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.'}</p>
+                    <p className="action-hint">{card.kind === 'classification' ? '사진을 모두 분류하면 학습 완료를 표시할 수 있어요.' : card.kind === 'mapquiz' ? '모든 지역을 찾고 결과를 보면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.' : '모든 짝을 맞히면 학습 완료를 표시할 수 있어요. ‘다음’으로 건너뛸 수도 있어요.'}</p>
                   ) : hardActive && (!allVisible || feedback) ? (
                     <>
                       <HardAnswer
@@ -648,9 +615,7 @@ export default function Study({
                       <Button className="reveal-next" onClick={revealNext}>
                         <Eye size={18} /> 빈칸 하나씩 보기 <kbd>Space</kbd>
                       </Button>
-                      <p className="action-hint">
-                        먼저 답을 떠올린 뒤, 빈칸을 눌러도 좋아요.
-                      </p>
+                      <p className="action-hint">답을 먼저 떠올려 보고, 빈칸을 눌러 확인하세요.</p>
                     </>
                   ) : (
                     <>
@@ -678,23 +643,24 @@ export default function Study({
                     >
                       <ArrowLeft size={17} /> 이전
                     </Button>
-                    {!['matching', 'classification'].includes(card.kind) && <span className="swipe-tip">{card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : '좌우로 밀어 카드 이동'}</span>}
+                    <span className="study-count">{doneCount > 0 ? `${doneCount}장 확인` : card.kind === 'passage' ? '하이라이트를 눌러 카드 보기' : ''}</span>
                     <Button variant="ghost" onClick={() => move(1)}>
                       {cursor === queue.length - 1 ? '학습 마치기' : '다음'}
                       <ArrowRight size={17} />
                     </Button>
                   </div>
                 </div>
-                {!isGame && <p className="keyboard-tip">
-                  <Keyboard size={14} />
-                  <span>← → 카드 이동</span>
-                  <span>Space 빈칸 보기</span>
-                  {maskIds.length > 0 && <span>↑ ↓ 빈칸 선택 · Enter 열기/닫기</span>}
-                  {canMarkWrong && maskIds.length > 0 && <span>X 틀림 표시</span>}
-                  {maskIds.length > 0 && <span>A 모두 보기</span>}
-                  <span>R 다시 가리기</span>
-                  <span>1 · 2 평가</span>
-                </p>}
+                </div>
+                {!isGame && (
+                  <p className="study-keys">
+                    <Keyboard size={14} />
+                    <span><kbd>Space</kbd> 빈칸 보기</span>
+                    <span><kbd>←</kbd><kbd>→</kbd> 이동</span>
+                    <span><kbd>1</kbd> 다시 볼게요 · <kbd>2</kbd> 기억했어요</span>
+                    {canMarkWrong && <span><kbd>X</kbd> 틀림 표시</span>}
+                    {onHelp && <button type="button" className="link-button" onClick={() => onHelp('keys')}>전체 단축키</button>}
+                  </p>
+                )}
               </>
             )
           )}

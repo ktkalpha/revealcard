@@ -1,6 +1,9 @@
 import { parseBody } from './masks.js'
 import { remark } from 'remark'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import { TABLE_LANG, parseTableData, tableText } from './table.js'
+import { MOTION_LANG, motionTitle } from './motion.js'
 
 const marker = /\uE000rc(\d+)\uE001/g
 const markerPresence = /\uE000rc\d+\uE001/
@@ -131,7 +134,7 @@ function annotate(children) {
   return out
 }
 
-const excerptParser = remark().use(remarkGfm)
+const excerptParser = remark().use(remarkGfm).use(remarkMath)
 
 export function markdownExcerpt(body) {
   const parts = parseBody(body)
@@ -140,7 +143,12 @@ export function markdownExcerpt(body) {
       ? `${part.text.slice(0, -1)} ` : part.text)
     .join('')
   const read = (node) => {
-    if (node.type === 'text' || node.type === 'code' || node.type === 'inlineCode')
+    if (node.type === 'code' && node.lang === MOTION_LANG) return ` [애니메이션: ${motionTitle(node.value) || node.value.trim()}] `
+    if (node.type === 'code' && node.lang === TABLE_LANG) {
+      const table = parseTableData(node.value)
+      if (table) return ` ${tableText(table)} `
+    }
+    if (['text', 'code', 'inlineCode', 'inlineMath', 'math'].includes(node.type))
       return node.value
     if (node.type === 'image') return node.alt || ''
     if (!node.children) return ''

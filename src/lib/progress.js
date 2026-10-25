@@ -1,3 +1,6 @@
+import { tagsInput } from './tags.js'
+
+// folders (added when first used): the folders each person files card sets into, { deckId: ['과학/물리'] }.
 export const emptyProgress = () => ({ ratings: {}, positions: {}, wrongMasks: {} })
 export function applyProgress(progress, operation) {
   const { kind, id, value, key } = operation
@@ -6,6 +9,11 @@ export function applyProgress(progress, operation) {
     if (value) values.add(key)
     else values.delete(key)
     progress.wrongMasks[id] = [...values]
+  } else if (kind === 'folders') {
+    progress.folders ||= {}
+    const tags = tagsInput(value) || []
+    if (tags.length) progress.folders[id] = tags
+    else delete progress.folders[id]
   } else progress[kind][id] = value
   return progress
 }
@@ -14,7 +22,8 @@ export function validOperation(op) {
   return op && safe(op.id) && (
     op.kind === 'ratings' && ['known', 'again'].includes(op.value) ||
     op.kind === 'positions' && safe(op.value) ||
-    op.kind === 'wrong' && safe(op.key) && typeof op.value === 'boolean'
+    op.kind === 'wrong' && safe(op.key) && typeof op.value === 'boolean' ||
+    op.kind === 'folders' && Array.isArray(op.value) && !!tagsInput(op.value)
   )
 }
 export function migrateProgress(target, legacy) {

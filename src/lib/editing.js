@@ -1,4 +1,6 @@
 import { parseBody } from './masks.js'
+import { tableBlocks } from './table.js'
+import { motionBlocks } from './motion.js'
 
 // Text-editing helpers for the card editor. They work on the raw Markdown body
 // and return { body, start, end } so the caller can restore the caret.
@@ -6,21 +8,30 @@ import { parseBody } from './masks.js'
 const MARKUP = /^(?:[*_`~#>|\-+:]+|\d+[.)])$/
 
 // Splits the body into tappable words, masks and untouchable gaps.
+// Table blocks are covered in the table editor, so tap mode shows them as one gap.
 export function tapTokens(body) {
   const tokens = []
+  const tables = tableBlocks(body)
   let cursor = 0
+  for (const table of tables) tokens.push({ type: 'gap', table: true, text: '[표]', start: table.start, end: table.end })
+  // An animation block cannot be covered; it shows as one gap.
+  const motions = motionBlocks(body)
+  for (const block of motions) tokens.push({ type: 'gap', text: '[애니메이션]', start: block.start, end: block.end })
+  const inTable = (index) => [...tables, ...motions].some((table) => index >= table.start && index < table.end)
   for (const part of parseBody(body)) {
     if (part.id !== undefined) {
-      tokens.push({ type: 'mask', text: part.text, start: part.start, end: part.end })
+      if (!inTable(part.start)) tokens.push({ type: 'mask', text: part.text, start: part.start, end: part.end })
       cursor = part.end
       continue
     }
     const offset = cursor
     cursor += part.text.length
-    for (const match of part.text.matchAll(/\s+|[^\s]+/g)) {
+    // A formula ($…$) is one word; a display formula ($$…$$) is left as it is.
+    for (const match of part.text.matchAll(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$|\s+|[^\s]+/g)) {
       const start = offset + match.index
       const text = match[0]
-      if (/^\s+$/.test(text) || MARKUP.test(text) || /^!\[.*\]\(.*\)$/.test(text)) {
+      if (inTable(start)) continue
+      if (/^\s+$/.test(text) || text.startsWith('$$') || MARKUP.test(text) || /^!\[.*\]\(.*\)$/.test(text)) {
         tokens.push({ type: 'gap', text, start, end: start + text.length })
         continue
       }
@@ -37,7 +48,7 @@ export function tapTokens(body) {
       if (trail) tokens.push({ type: 'gap', text: text.slice(text.length - trail), start: start + text.length - trail, end: start + text.length })
     }
   }
-  return tokens
+  return tokens.sort((a, b) => a.start - b.start)
 }
 
 // Tapping a word covers it; tapping a word right next to a cover (only spaces
@@ -131,8 +142,6 @@ export function shiftLines(body, start, end, direction) {
   return { body: body.slice(0, from) + next + body.slice(to), start: caret, end: start === end ? caret : from + next.length }
 }
 
-export const TABLE_TEMPLATE = '| 항목 | 내용 |\n| --- | --- |\n|  |  |'
-
 // Inserts a block (table, image) on its own lines at the caret.
 export function insertBlock(body, start, end, block) {
   const before = body.slice(0, start)
@@ -143,4 +152,4 @@ export function insertBlock(body, start, end, block) {
 
 // Cards with lists, tables, headings or several paragraphs read better left-aligned.
 export const isStructured = (body) =>
-  /^\s*([-*+]|\d+[.)])\s|^\s*\||^#{1,6}\s/m.test(body) || body.split(/\n\s*\n/).filter((block) => block.trim()).length > 2
+  /^\s*([-*+]|\d+[.)])\s|^\s*\||^#{1,6}\s|^```table/m.test(body) || body.split(/\n\s*\n/).filter((block) => block.trim()).length > 2

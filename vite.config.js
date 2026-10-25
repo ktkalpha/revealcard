@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // A new release waits until the person chooses to apply it (or next opens the app),
+      // so a deploy never reloads a page someone is using.
+      registerType: 'prompt',
       manifest: {
         name: 'Revealcard',
         short_name: 'Revealcard',
@@ -31,6 +33,10 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // Keep earlier hashed assets so open tabs can still load chunks they have not fetched yet.
+    emptyOutDir: false,
+  },
   server: {
     proxy: {
       '/api': {

@@ -1,5 +1,6 @@
 import { bodyError } from './masks.js'
 import { matchingError } from './matching.js'
+import { mapQuizError } from './mapquiz.js'
 import { classificationError } from './classification.js'
 import { occlusionError } from './occlusion.js'
 import { passageError } from './passage.js'
@@ -11,6 +12,7 @@ export function cardSaveError(card) {
   const error = card.kind === 'classification' ? classificationError(card.body)
     : card.kind === 'occlusion' ? occlusionError(card.body)
       : card.kind === 'matching' ? matchingError(card.body)
+      : card.kind === 'mapquiz' ? mapQuizError(card.body)
         : bodyError(card.body)
   return error || (card.kind === 'passage' ? passageError(card) : '')
 }

@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookOpen, Check, Disc3, FlaskConical, ShieldCheck, Layers3, LogIn, LogOut, Palette, Plus, RotateCcw, X } from 'lucide-react'
+import { Check, ChevronDown, CircleHelp, Disc3, FileDown, PawPrint, ShieldCheck, Layers3, LogIn, LogOut, Palette, RotateCcw, UserRound, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import Study from './components/Study'
 import Library from './components/Library'
+import Home from './components/Home'
+import Menu from './components/Menu'
+import HelpDialog from './components/HelpDialog'
 import Editor from './components/Editor'
 import PassageEditor from './components/PassageEditor'
 import PassageCards from './components/PassageCards'
@@ -20,6 +23,7 @@ import AuthDialog from './components/AuthDialog'
 import Modal from './components/Modal'
 import { ExportDialog, ImportDialog } from './components/Transfer'
 import { parseCardSet } from './cardSet'
+import { folderTree } from './lib/tags'
 import { api } from './lib/api'
 import { cardSaveError, isBlankCard, saveLabel } from './lib/autosave'
 import { emptyProgress, applyProgress } from './lib/progress'
@@ -33,10 +37,17 @@ import {
 } from './lib/storage'
 import './style.css'
 import './redesign.css'
+import './app.css'
 import { registerSW } from 'virtual:pwa-register'
 
-registerSW({
+// New releases never reload the page by themselves; the app offers to apply them.
+let applyUpdate = null
+const updateSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    applyUpdate = () => updateSW(true)
+    window.dispatchEvent(new Event('revealcard:update-ready'))
+  },
   onRegisteredSW(_url, registration) {
     if (!registration) return
     const checkUpdate = () => {
@@ -61,12 +72,15 @@ function App() {
     catch { setThemeStorageError(true) }
   }, [theme])
   const [library, setLibrary] = useState({
-    decks: [], selectedDeckId: null, ratings: {}, positions: {}, wrongMasks: {},
+    decks: [], selectedDeckId: null, ratings: {}, positions: {}, wrongMasks: {}, folders: {},
   })
   const [user, setUser] = useState(null)
   const companion = usePet(user?.id || null)
   const [loaded, setLoaded] = useState(false)
-  const [view, setView] = useState('study')
+  const [view, setView] = useState('home')
+  const [studyMode, setStudyMode] = useState('all')
+  const LAST_DECK_KEY = 'revealcard.lastDeck'
+  const [lastDeckId, setLastDeckId] = useState(() => { try { return localStorage.getItem(LAST_DECK_KEY) } catch { return null } })
   const [draft, setDraft] = useState(null)
   const [draftOwner, setDraftOwner] = useState(null)
   const [autosaved, setAutosaved] = useState(false)
@@ -112,7 +126,7 @@ function App() {
       localStorage.setItem(key, JSON.stringify([...(Array.isArray(current) ? current : []), operation]))
       syncProgress(id).catch(() => setServerError('학습 기록은 기기에 보관 중이에요. 연결되면 계정에 저장합니다.'))
     }
-    setLibrary(prev => ({ ...prev, ...applyProgress(structuredClone({ ratings: prev.ratings, positions: prev.positions, wrongMasks: prev.wrongMasks }), operation) }))
+    setLibrary(prev => ({ ...prev, ...applyProgress(structuredClone({ ratings: prev.ratings, positions: prev.positions, wrongMasks: prev.wrongMasks, folders: prev.folders || {} }), operation) }))
   }
   const hasLegacy = (() => {
     try {
@@ -126,6 +140,12 @@ function App() {
     library.decks[0] ||
     { id: '', name: '카드 셋', cards: [], canEdit: false }
   const notify = (text, undo) => setNotice({ text, undo, id: uid() })
+  const [updateReady, setUpdateReady] = useState(false)
+  useEffect(() => {
+    const ready = () => setUpdateReady(true)
+    window.addEventListener('revealcard:update-ready', ready)
+    return () => window.removeEventListener('revealcard:update-ready', ready)
+  }, [])
 
   const refresh = useCallback(async (preferredId) => {
     const version = ++requestVersion.current
@@ -148,7 +168,7 @@ function App() {
         setOfflineIds(cached.savedIds)
         setLibrary((prev) => ({
           ...prev,
-          ...emptyProgress(), ...readLocal(progressKey(cachedUser?.id)),
+          folders: {}, ...emptyProgress(), ...readLocal(progressKey(cachedUser?.id)),
           decks: cached.decks,
           selectedDeckId: [preferredId, prev.selectedDeckId].find((id) =>
             cached.decks.some((item) => item.id === id),
@@ -178,11 +198,11 @@ function App() {
       ...prev,
       decks: next.decks,
       ...(next.user ? (() => {
-        const progress = next.progress || emptyProgress()
+        const progress = { folders: {}, ...(next.progress || emptyProgress()) }
         const pending = readLocal(`${progressKey(next.user.id)}.pending`)
         if (Array.isArray(pending)) pending.forEach(op => applyProgress(progress, op))
         return progress
-      })() : { ...emptyProgress(), ...readLocal(progressKey(null)) }),
+      })() : { folders: {}, ...emptyProgress(), ...readLocal(progressKey(null)) }),
       selectedDeckId:
         [preferredId, prev.selectedDeckId].find((id) =>
           next.decks.some((item) => item.id === id),
@@ -215,13 +235,13 @@ function App() {
         `revealcard.progress.v1.${user?.id || 'guest'}`,
         JSON.stringify({
           ratings: library.ratings, positions: library.positions,
-          wrongMasks: library.wrongMasks,
+          wrongMasks: library.wrongMasks, folders: library.folders,
         }),
       )
     } catch {
       // Card sets remain safely stored on the server.
     }
-  }, [library.ratings, library.positions, library.wrongMasks, user?.id, loaded])
+  }, [library.ratings, library.positions, library.wrongMasks, library.folders, user?.id, loaded])
   useEffect(() => {
     if (draftOwner !== (user?.id || 'guest')) return
     setAutosaved(false)
@@ -325,9 +345,20 @@ function App() {
     setLibrary((prev) => ({ ...prev, selectedDeckId: id }))
   const study = (cardId) => {
     if (cardId) recordProgress({ kind: 'positions', id: deck.id, value: cardId })
+    setStudyMode('all')
     setSessionVersion((v) => v + 1)
     setView('study')
   }
+  // From Home: open a set to study (optionally only the cards marked 다시 볼게요) or to manage.
+  const openDeck = (id, target = 'study', mode = 'all') => {
+    selectDeck(id)
+    setLastDeckId(id)
+    try { localStorage.setItem(LAST_DECK_KEY, id) } catch {}
+    setStudyMode(mode)
+    setSessionVersion((v) => v + 1)
+    setView(target)
+  }
+  const goHome = () => setView('home')
   const position = cardId => {
     if (library.positions[deck.id] !== cardId) recordProgress({ kind: 'positions', id: deck.id, value: cardId })
   }
@@ -525,6 +556,7 @@ function App() {
     if (!await run(() => api(`/api/decks/${deleted.id}`, { method: 'DELETE' })))
       return
     setModal(null)
+    setView('home')
     notify('카드 셋을 삭제했어요.', async () => {
       await run(() => api('/api/decks', {
         method: 'POST',
@@ -596,8 +628,26 @@ function App() {
     }))
     if (result) {
       setModal(null)
-      setView('library')
+      setView('home')
       notify(`${result.count}개의 카드 셋을 비공개로 가져왔어요.`)
+    }
+  }
+  const logout = async () => {
+    if (offline) {
+      rememberUser(null)
+      setUser(null)
+      const cached = await offlineDecks(null).catch(() => ({ decks: [], savedIds: [] }))
+      setOfflineIds(cached.savedIds)
+      setLibrary((prev) => ({
+        ...prev, ...emptyProgress(), ...readLocal(progressKey(null)), decks: cached.decks, selectedDeckId: cached.decks[0]?.id || null,
+      }))
+      if (!cached.decks.length)
+        setServerError('서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
+      setDraft(null)
+      setView('home')
+    } else if ((await closeDraft({ quiet: true }), await run(() => api('/api/logout', { method: 'POST' })))) {
+      setView('home')
+      setDraft(null)
     }
   }
   if (!loaded)
@@ -608,107 +658,58 @@ function App() {
         본문으로 이동
       </a>
       <header className="topbar">
-        <button
-          className="brand"
-          onClick={() => setView('study')}
-          aria-label="Revealcard 학습 홈"
-        >
+        <button className="brand" onClick={goHome} aria-label="Revealcard 홈">
           <span className="brand-mark">
-            <Layers3 size={19} strokeWidth={1.8} />
+            <Layers3 size={17} strokeWidth={1.8} />
           </span>
           <span>
             revealcard<span className="brand-dot">.</span>
           </span>
         </button>
-        <nav aria-label="주 메뉴">
-          <button
-            className={`nav-link ${view === 'study' ? 'active' : ''}`}
-            aria-current={view === 'study' ? 'page' : undefined}
-            onClick={() => setView('study')}
-          >
-            <BookOpen size={16} /> 학습하기
-          </button>
-          <button
-            className={`nav-link ${view === 'library' ? 'active' : ''}`}
-            aria-current={view === 'library' ? 'page' : undefined}
-            onClick={() => setView('library')}
-          >
-            <Layers3 size={16} /> 카드 라이브러리
-          </button>
-          <button className={`nav-link ${modal?.type === 'experiments' ? 'active' : ''}`} onClick={() => setModal({ type: 'experiments' })}>
-            <FlaskConical size={16} /> 실험실 <small className="labs-badge">BETA</small>
-          </button>
-          {user && !offline && (
-            <a className="nav-link" href="/club/">
-              <Disc3 size={16} /> 비밀 클럽
-            </a>
+        <div className="header-actions">
+          <Button variant="ghost" size="sm" className="header-link" aria-label="사용법" title="사용법" onClick={() => setModal({ type: 'help' })}>
+            <CircleHelp size={17} /> <span>사용법</span>
+          </Button>
+          {user && (
+            <Button variant="ghost" size="sm" className="header-link" aria-label="펫" title="펫 꾸미기" onClick={() => setModal({ type: 'experiments' })}>
+              <PawPrint size={17} /> <span>펫</span>
+            </Button>
           )}
           {user?.admin && !offline && (
-            <button className={`nav-link ${modal?.type === 'admin' ? 'active' : ''}`} onClick={() => setModal({ type: 'admin' })}>
-              <ShieldCheck size={16} /> 관리자
-            </button>
+            <Button variant="ghost" size="sm" className="header-link" aria-label="관리자" title="관리자" onClick={() => setModal({ type: 'admin' })}>
+              <ShieldCheck size={17} /> <span>관리자</span>
+            </Button>
           )}
-        </nav>
-        <div className="workspace-decks">
-          <p className="rail-label">카드 셋 <span>{library.decks.length}</span></p>
-          <div className="rail-deck-list">
-            {library.decks.map((item) => (
-              <button key={item.id} className={`rail-deck ${item.id === deck.id ? 'selected' : ''}`}
-                aria-pressed={item.id === deck.id} onClick={() => { selectDeck(item.id); setView('study') }}>
-                <span className="rail-deck-icon"><BookOpen size={15} /></span>
-                <span>{item.name}</span><small>{item.cards.length}</small>
-              </button>
-            ))}
-          </div>
-          <button className="rail-create" onClick={() => offline ? notify('다시 연결한 뒤 카드 셋을 만들 수 있어요.') : user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })} disabled={offline}>
-            <Plus size={15} /> 새 카드 셋
-          </button>
-        </div>
-        <div className="rail-note"><span>MAKE IT STICK.</span><p>한 장의 작은 반복,<br />오래 남는 나의 지식.</p></div>
-        <div className="header-actions">
-          <Button className="header-theme" variant="ghost" size="icon" aria-label="사이트 색상 설정" title="사이트 색상 설정" onClick={() => setModal({ type: 'theme' })}><Palette size={18} /></Button>
-          <Button
-            className="header-add"
-            size="sm"
-            aria-label="새 카드 만들기"
-            onClick={() => openEditor()}
-            disabled={offline}
-          >
-            <Plus size={16} />
-            <span>새 카드</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={user ? `${user.username} 로그아웃` : '로그인'}
-            onClick={async () => {
-              if (offline && user) {
-                rememberUser(null)
-                setUser(null)
-                const cached = await offlineDecks(null).catch(() => ({ decks: [], savedIds: [] }))
-                setOfflineIds(cached.savedIds)
-                setLibrary((prev) => ({
-                  ...prev, ...emptyProgress(), ...readLocal(progressKey(null)), decks: cached.decks, selectedDeckId: cached.decks[0]?.id || null,
-                }))
-                if (!cached.decks.length)
-                  setServerError('서버에 연결할 수 없어요. 온라인일 때 카드 셋을 기기에 저장해 주세요.')
-                setDraft(null)
-                setView('library')
-              } else if (!user) {
-                if (offline) notify('로그인하려면 서버에 연결해 주세요.')
-                else setModal({ type: 'auth' })
-              }
-              else if ((await closeDraft({ quiet: true }), await run(() => api('/api/logout', { method: 'POST' })))) {
-                setView('library')
-                setDraft(null)
-              }
-            }}
-          >
-            {user ? <LogOut size={16} /> : <LogIn size={16} />}
-            <span>{user?.username || '로그인'}</span>
-          </Button>
+          {user ? (
+            <Menu
+              label="내 메뉴"
+              className="user-menu"
+              trigger={<><UserRound size={17} /><span>{user.username}</span><ChevronDown size={14} /></>}
+              items={[
+                { label: '화면 색상', icon: Palette, onClick: () => setModal({ type: 'theme' }) },
+                !offline && { label: '비밀 클럽', icon: Disc3, onClick: () => { window.location.href = '/club/' } },
+                !offline && !user.migrated && hasLegacy && { label: '브라우저 카드 가져오기', icon: FileDown, onClick: () => setModal({ type: 'migrate' }) },
+                { divider: true },
+                { label: '로그아웃', icon: LogOut, onClick: logout },
+              ]}
+            />
+          ) : (
+            <>
+              <Button className="header-theme" variant="ghost" size="icon" aria-label="화면 색상" title="화면 색상" onClick={() => setModal({ type: 'theme' })}><Palette size={18} /></Button>
+              <Button size="sm" onClick={() => offline ? notify('로그인하려면 서버에 연결해 주세요.') : setModal({ type: 'auth' })}>
+                <LogIn size={16} /> <span>로그인</span>
+              </Button>
+            </>
+          )}
         </div>
       </header>
+      {updateReady && (
+        <div className="update-ready" role="status">
+          <span>새 버전이 준비됐어요. 지금 하던 학습은 그대로 두고, 원할 때 적용하세요.</span>
+          <Button size="sm" variant="outline" onClick={() => applyUpdate?.()}>지금 적용</Button>
+          <button className="update-ready-close" aria-label="나중에" onClick={() => setUpdateReady(false)}><X size={14} /></button>
+        </div>
+      )}
       {serverError && (
         <div className="storage-alert" role="alert">
           {serverError}
@@ -741,16 +742,36 @@ function App() {
           </button>
         </div>
       )}
+      {view === 'home' && (
+        <Home
+          decks={library.decks}
+          user={user}
+          ratings={library.ratings}
+          positions={library.positions}
+          lastDeckId={lastDeckId}
+          offline={offline}
+          folders={library.folders || {}}
+          onFolders={(id, tags) => recordProgress({ kind: 'folders', id, value: tags })}
+          onStudy={(id, mode) => openDeck(id, 'study', mode)}
+          onManage={(id) => openDeck(id, 'library')}
+          onCreateDeck={() => offline ? notify('다시 연결한 뒤 카드 셋을 만들 수 있어요.') : user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
+          onImport={() => offline ? notify('불러오기는 다시 연결한 뒤 가능해요.') : user ? fileInput.current.click() : setModal({ type: 'auth' })}
+          onLogin={() => setModal({ type: 'auth' })}
+          onHelp={(section) => setModal({ type: 'help', section })}
+          showMigration={!offline && !!user && !user.migrated && hasLegacy}
+          onMigrate={() => setModal({ type: 'migrate' })}
+        />
+      )}
       {view === 'study' && (
         <Study
-          key={`${deck.id}-${sessionVersion}`}
+          key={`${deck.id}-${sessionVersion}-${deck.cards.length ? 1 : 0}`}
           deck={deck}
-          decks={library.decks}
+          initialMode={studyMode}
           ratings={library.ratings}
           wrongMasks={library.wrongMasks}
           onMarkWrong={markWrong}
           position={library.positions[deck.id]}
-          onDeck={selectDeck}
+          onHome={goHome}
           onRate={rate}
           onPosition={position}
           onEdit={deck.canEdit ? openEditor : null}
@@ -761,6 +782,7 @@ function App() {
           onHighlight={highlight => setModal({type:'passage-cards',highlight})}
           companion={user ? companion : null}
           onPetSettings={(petId) => setModal({ type: 'experiments', petId })}
+          onHelp={(section) => setModal({ type: 'help', section })}
         />
       )}
       {view === 'library' && (
@@ -769,20 +791,17 @@ function App() {
           deck={deck}
           user={user}
           ratings={library.ratings}
-          onDeck={selectDeck}
+          onHome={goHome}
           onStudy={study}
           onAdd={() => openEditor()}
           onEdit={openEditor}
           onDelete={(card) => setModal({ type: 'delete-card', card })}
           onMove={moveCard}
           onTransfer={offline ? null : transferCards}
-          onCreateDeck={() => user ? setModal({ type: 'create' }) : setModal({ type: 'auth' })}
           onRenameDeck={() => deck.canEdit && setModal({ type: 'rename' })}
           onDeleteDeck={() => deck.canManage && setModal({ type: 'delete-deck' })}
           onVisibility={setVisibility}
           onHistory={() => setModal({ type: 'history' })}
-          onMigrate={() => setModal({ type: 'migrate' })}
-          showMigration={!offline && !!user && !user.migrated && hasLegacy}
           onExport={() => setModal({ type: 'export' })}
           offline={offline}
           offlineSaved={offlineIds.includes(deck.id)}
@@ -823,6 +842,7 @@ function App() {
           카드 셋 파일을 확인하고 있어요…
         </div>
       )}
+      {modal?.type === 'help' && <HelpDialog initial={modal.section} onClose={() => setModal(null)} />}
       {modal?.type === 'admin' && <AdminDialog onClose={() => setModal(null)} />}
       {modal?.type === 'experiments' && <ExperimentsDialog user={user} onLogin={() => setModal({type: 'auth'})} companion={companion} initialPetId={modal.petId} onClose={() => setModal(null)} />}
       {modal?.type === 'theme' && <ThemeDialog theme={theme} onChange={setTheme} storageError={themeStorageError} onClose={() => setModal(null)} />}
@@ -851,7 +871,7 @@ function App() {
           onSuccess={async () => {
             await refresh()
             setModal(null)
-            setView('library')
+            setView('home')
           }}
         />
       )}
@@ -968,10 +988,6 @@ function App() {
           </button>
         </div>
       )}
-      <footer>
-        <span>revealcard.</span>
-        <span>가리고, 떠올리고, 기억하기.</span>
-      </footer>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { classificationError } from '../src/lib/classification.js'
 import { occlusionError } from '../src/lib/occlusion.js'
 import { matchingError } from '../src/lib/matching.js'
+import { mapQuizError } from '../src/lib/mapquiz.js'
 import { passageError, passageData } from '../src/lib/passage.js'
 import { bodyError } from '../src/lib/masks.js'
 import { createStore } from './store.js'
@@ -74,10 +75,10 @@ const cardInput = (card) => {
     typeof card.body !== 'string' ||
     !card.body.trim() ||
     card.body.length > 20000 ||
-    (card.kind !== undefined && !['note', 'matching', 'passage', 'classification', 'occlusion'].includes(card.kind)) ||
+    (card.kind !== undefined && !['note', 'matching', 'passage', 'classification', 'occlusion', 'mapquiz'].includes(card.kind)) ||
     (card.align !== undefined &&
       !['left', 'center', 'right'].includes(card.align)) ||
-    (card.kind === 'classification' ? classificationError(card.body) : card.kind === 'occlusion' ? occlusionError(card.body) : card.kind === 'matching' ? matchingError(card.body) : bodyError(card.body)) ||
+    (card.kind === 'classification' ? classificationError(card.body) : card.kind === 'occlusion' ? occlusionError(card.body) : card.kind === 'matching' ? matchingError(card.body) : card.kind === 'mapquiz' ? mapQuizError(card.body) : bodyError(card.body)) ||
     (card.kind === 'passage' && passageError(card))
   )
     fail(400, '카드 제목, 내용 또는 빈칸 표시를 확인해 주세요.')
@@ -85,7 +86,7 @@ const cardInput = (card) => {
     id: randomUUID(),
     title: card.title.trim(),
     body: card.body,
-    ...(['note', 'matching', 'passage', 'classification', 'occlusion'].includes(card.kind) ? { kind: card.kind } : {}),
+    ...(['note', 'matching', 'passage', 'classification', 'occlusion', 'mapquiz'].includes(card.kind) ? { kind: card.kind } : {}),
     ...(card.align ? { align: card.align } : {}),
     ...(card.kind === 'passage' ? passageData(card) : {}),
   }

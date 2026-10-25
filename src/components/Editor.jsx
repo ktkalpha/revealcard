@@ -16,19 +16,23 @@ import {
   List,
   PenLine,
   Rows3,
+  Sigma,
   Table2,
   Undo2,
 } from 'lucide-react'
 import { Button } from './ui/button'
 import MaskedText from './MaskedText'
 import MatchingEditor from './MatchingEditor'
+const MapQuizEditor = React.lazy(() => import('./MapQuizEditor'))
 import ClassificationEditor from './ClassificationEditor'
 import OcclusionEditor from './OcclusionEditor'
 import ImageDialog from './ImageDialog'
+import TableDialog from './TableDialog'
 import { bodyError, masksIn, maskSelection } from '../lib/masks'
 import {
-  TABLE_TEMPLATE, continueList, insertBlock, isStructured, shiftLines, tapTokens, toggleList, toggleTap, wordRange,
+  continueList, insertBlock, isStructured, shiftLines, tapTokens, toggleList, toggleTap, wordRange,
 } from '../lib/editing'
+import { emptyTable, serializeTable, tableAt, tableBlocks } from '../lib/table'
 
 // One editor for every text card: short cards, outline notes and long passages
 // are all Markdown with [[covers]]. Notes created before the merge open here too.
@@ -40,6 +44,9 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
   const [revealed, setRevealed] = useState(new Set())
   const [history, setHistory] = useState([])
   const [adding, setAdding] = useState(false)
+  // The table being edited in the table dialog: its range in the body and contents.
+  const [tableEdit, setTableEdit] = useState(null)
+  const [inTable, setInTable] = useState(false)
   // Caret to restore after a toolbar edit; applied before paint so fast typing lands in place.
   const pendingCaret = useRef(null)
   useLayoutEffect(() => {
@@ -54,8 +61,10 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
   if (card.kind === 'classification') return <ClassificationEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
   if (card.kind === 'occlusion') return <OcclusionEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
   if (card.kind === 'matching') return <MatchingEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} />
+  if (card.kind === 'mapquiz') return <React.Suspense fallback={<main id="main" className="editor-page"><p className="muted">지도를 불러오는 중…</p></main>}><MapQuizEditor {...{ draft, deckName, onChange, onSave, onExit, autosaved }} /></React.Suspense>
 
   const ids = masksIn(card.body).map((mask) => mask.id)
+  const tables = tableBlocks(card.body)
   const syntaxError = bodyError(card.body)
   const canSave = card.title.trim() && card.body.trim() && !syntaxError
   const align = card.align || (isStructured(card.body) ? 'left' : 'center')
@@ -76,6 +85,28 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
   }
   const remember = (e) => {
     selection.current = [e.target.selectionStart, e.target.selectionEnd]
+    setInTable(!!tableAt(card.body, e.target.selectionStart))
+  }
+  const openTable = (caret = selection.current[0]) => {
+    const found = tableAt(card.body, caret)
+    setTableEdit(found
+      ? { ...found, isNew: false }
+      : { start: selection.current[0], end: selection.current[1], table: emptyTable(3, 3), isNew: true })
+  }
+  const saveTable = (table) => {
+    const { start, end, isNew } = tableEdit
+    setTableEdit(null)
+    if (isNew) return apply(insertBlock(card.body, start, end, serializeTable(table)))
+    const block = serializeTable(table)
+    apply({ body: card.body.slice(0, start) + block + card.body.slice(end), start: start + block.length, end: start + block.length })
+  }
+  const deleteTable = () => {
+    const { start, end } = tableEdit
+    setTableEdit(null)
+    const before = card.body.slice(0, start).replace(/\n+$/, '')
+    const after = card.body.slice(end).replace(/^\n+/, '')
+    const joiner = before && after ? '\n\n' : ''
+    apply({ body: before + joiner + after, start: before.length, end: before.length })
   }
   const cover = (wholeLine) => {
     try {
@@ -89,6 +120,12 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
     const [start, end] = wordRange(card.body, ...selection.current)
     const text = card.body.slice(start, end) || '굵은 글씨'
     apply({ body: card.body.slice(0, start) + `**${text}**` + card.body.slice(end), start: start + 2, end: start + 2 + text.length })
+  }
+  // Wraps the selection in $…$; with nothing selected it inserts a formula to fill in.
+  const formula = () => {
+    const [start, end] = selection.current
+    const text = card.body.slice(start, end) || 'x^2'
+    apply({ body: card.body.slice(0, start) + `$${text}$` + card.body.slice(end), start: start + 1, end: start + 1 + text.length })
   }
   const undo = () => {
     if (!history.length) return
@@ -194,6 +231,17 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
           </div>
           {mode === 'write' ? (
             <div className="writing-area">
+              {tables.length > 0 && (
+                <div className="table-strip" role="group" aria-label="이 카드의 표">
+                  <span>표는 글 대신 표 편집 창에서 고쳐요</span>
+                  {tables.map((block, index) => (
+                    <button type="button" key={block.start} onPointerDown={(e) => e.preventDefault()} onClick={() => openTable(block.start)}>
+                      <Table2 size={14} /> 표 {tables.length > 1 ? `${index + 1} ` : ''}편집
+                      <small>{block.table.rows.length}×{block.table.rows[0].length}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={area}
                 id="card-body"
@@ -207,6 +255,7 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
                 onSelect={remember}
                 onKeyUp={remember}
                 onClick={remember}
+                onDoubleClick={(e) => tableAt(card.body, e.target.selectionStart) && openTable(e.target.selectionStart)}
                 aria-describedby="editor-feedback"
                 aria-invalid={!!syntaxError}
                 required
@@ -217,9 +266,10 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
                 {tool('목록', List, () => apply(toggleList(card.body, ...selection.current)))}
                 {tool('들여쓰기', IndentIncrease, () => apply(shiftLines(card.body, ...selection.current, 1)))}
                 {tool('내어쓰기', IndentDecrease, () => apply(shiftLines(card.body, ...selection.current, -1)))}
-                {tool('표', Table2, () => apply(insertBlock(card.body, ...selection.current, TABLE_TEMPLATE)))}
+                {tool(inTable ? '표 편집' : '표', Table2, () => openTable())}
                 {tool('사진', ImagePlus, () => setAdding(true))}
                 {tool('굵게', Bold, bold)}
+                {tool('수식', Sigma, formula)}
                 {tool('되돌리기', Undo2, undo, { disabled: !history.length })}
               </div>
             </div>
@@ -229,7 +279,13 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
                 단어를 탭하면 가려져요. 가린 부분 옆 단어를 탭하면 가리개가 늘어나고, 가린 부분을 다시 탭하면 풀려요.
               </p>
               <div className="tap-text">
-                {tapTokens(card.body).map((token) => token.type === 'gap'
+                {tapTokens(card.body).map((token) => token.table
+                  ? (
+                    <button type="button" key={token.start} className="tap-table" onClick={() => openTable(token.start)}>
+                      <Table2 size={15} /> 표 — 눌러서 칸 가리기
+                    </button>
+                  )
+                  : token.type === 'gap'
                   ? <span key={token.start} className="tap-gap">{token.text}</span>
                   : (
                     <button
@@ -258,8 +314,10 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
             className={error || syntaxError ? 'field-error' : 'field-hint'}
             aria-live="polite"
           >
-            {error || syntaxError || (mode === 'write'
-              ? <>글자를 고르지 않고 ‘가리기’를 누르면 커서가 있는 단어를 가려요. <code>[[정답]]</code>처럼 직접 써도 돼요.</>
+            {error || syntaxError || (mode === 'write' && inTable
+              ? <>커서가 표 안에 있어요. ‘표 편집’을 누르거나 두 번 누르면 표를 고칠 수 있어요.</>
+              : mode === 'write'
+              ? <>글자를 고르지 않고 ‘가리기’를 누르면 커서가 있는 단어를 가려요. <code>[[정답]]</code>처럼 직접 써도 돼요. 수식은 <code>$E=mc^2$</code>, 수식 속 빈칸은 <code>$E=[[mc^2]]$</code>.</>
               : null)}
           </p>
           <div className="editor-actions">
@@ -291,11 +349,21 @@ export default function Editor({ draft, deckName, onChange, onSave, onExit, auto
           <div className="preview-sheet paper">
             <h2 style={{ textAlign: align }}>{card.title || '카드 제목'}</h2>
             {card.body
-              ? <MaskedText body={card.body} align={align} revealed={revealed} onToggle={toggle} />
+              ? <MaskedText body={card.body} align={align} revealed={revealed} onToggle={toggle} onEditTable={(index) => tables[index] && openTable(tables[index].start)} />
               : <p className="preview-placeholder">입력한 내용이 여기에 표시돼요.</p>}
           </div>
         </aside>
       </form>
+      {tableEdit && (
+        <TableDialog
+          initial={tableEdit.table}
+          isNew={tableEdit.isNew}
+          converted={!!tableEdit.markdown}
+          onSave={saveTable}
+          onDelete={deleteTable}
+          onClose={() => setTableEdit(null)}
+        />
+      )}
       {adding && (
         <ImageDialog
           onClose={() => setAdding(false)}

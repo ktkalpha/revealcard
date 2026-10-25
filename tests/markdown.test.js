@@ -87,3 +87,26 @@ test('a cover right after ^ becomes a note above the word or bold run before it'
   assert.ok(paragraph.some((node) => node.type === 'text' && node.value.endsWith('^ ')))
   assert.equal(markdownExcerpt('길흔^[[발음]] 뒤'), '길흔 발음 뒤')
 })
+
+test('formulas read as their source in excerpts and stay one word for tap covers', async () => {
+  const { markdownExcerpt } = await import('../src/lib/markdown.js')
+  const { tapTokens } = await import('../src/lib/editing.js')
+  assert.equal(markdownExcerpt('힘은 $F = ma$ 이다'), '힘은 F = ma 이다')
+  assert.equal(markdownExcerpt('$$\n\\frac{1}{2}mv^2\n$$'), '\\frac{1}{2}mv^2')
+  const words = tapTokens('힘은 $F = ma$ 이다').filter((token) => token.type === 'word').map((token) => token.text)
+  assert.deepEqual(words, ['힘은', '$F = ma$', '이다'])
+})
+
+test('a one-line $$ formula becomes a display formula', async () => {
+  const { displayLines } = await import('../src/lib/math.js')
+  assert.equal(displayLines('앞\n$$x = \\frac{1}{2}$$\n뒤'), '앞\n$$\nx = \\frac{1}{2}\n$$\n뒤')
+  assert.equal(displayLines('글 $$x$$ 글'), '글 $$x$$ 글')
+})
+
+test('an animation block is one untouchable piece in excerpts and tap covers', async () => {
+  const { markdownExcerpt } = await import('../src/lib/markdown.js')
+  const { tapTokens } = await import('../src/lib/editing.js')
+  const body = '앞\n\n```motion\nfusion\n```\n\n뒤'
+  assert.equal(markdownExcerpt(body), '앞 [애니메이션: 수소 핵융합 반응] 뒤')
+  assert.deepEqual(tapTokens(body).filter((token) => token.type === 'word').map((token) => token.text), ['앞', '뒤'])
+})

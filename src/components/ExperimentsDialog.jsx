@@ -21,9 +21,9 @@ export default function ExperimentsDialog({ user, onLogin, companion, initialPet
     setCreating(true); setError('')
     try { const result = await companion.create(`펫 ${pets.length + 1}`); if (result?.created) setSelected(result.created) } catch (err) { setError(err.message) } finally { setCreating(false) }
   }
-  if(!user)return <Modal title="실험실 · 커스텀 펫" onClose={onClose}><p className="modal-description">커스텀 펫은 로그인한 사용자 전용 기능이에요. 로그인하면 내 이미지로 학습 친구를 만들 수 있어요.</p><div className="modal-actions"><Button onClick={onLogin}>로그인하기</Button></div></Modal>
-  if(!ready)return <Modal title="실험실 · 커스텀 펫" onClose={onClose}><p role="status">나의 펫을 불러오는 중…</p>{serverError && <p role="alert">{serverError}</p>}</Modal>
-  return <Modal title="실험실 · 커스텀 펫" onClose={onClose}>
+  if(!user)return <Modal title="펫 꾸미기" onClose={onClose}><p className="modal-description">커스텀 펫은 로그인한 사용자 전용 기능이에요. 로그인하면 내 이미지로 학습 친구를 만들 수 있어요.</p><div className="modal-actions"><Button onClick={onLogin}>로그인하기</Button></div></Modal>
+  if(!ready)return <Modal title="펫 꾸미기" onClose={onClose}><p role="status">나의 펫을 불러오는 중…</p>{serverError && <p role="alert">{serverError}</p>}</Modal>
+  return <Modal title="펫 꾸미기" onClose={onClose}>
     <p className="modal-description">이미지를 고르고 완료를 누르면 Codex가 표정 4가지를 만들어 줘요. 원하는 표정을 더 만들고, 상황마다 어떤 표정을 보일지 정할 수 있어요.</p>
     <div className="pet-tabs" role="tablist" aria-label="나의 펫">
       {pets.map(item => <button key={item.id} role="tab" aria-selected={item.id === pet?.id} onClick={() => setSelected(item.id)}>

@@ -2534,6 +2534,52 @@ footer span:first-child {
   .matching-tile.selected { padding: 8px; }
 }
 
+/* Map quiz game */
+.mapquiz-game { width: 100%; text-align: left; }
+.mapquiz-prompt { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; padding: 14px 16px; border-radius: 7px; background: var(--soft); }
+.mapquiz-prompt svg { flex: none; color: #c2412d; }
+.mapquiz-prompt div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mapquiz-prompt strong { font-size: 20px; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
+.mapquiz-prompt span { color: var(--muted); font-size: 13px; }
+.world-map { position: relative; width: 100%; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.world-map svg { display: block; width: 100%; aspect-ratio: 2.2 / 1; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.world-map svg.pickable { cursor: crosshair; }
+.world-map svg:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.world-sea { fill: color-mix(in srgb, #4d86b8 22%, var(--paper)); }
+.world-land { fill: color-mix(in srgb, #8a9a6c 58%, var(--paper)); stroke: none; }
+.world-borders { fill: none; stroke: color-mix(in srgb, var(--paper) 70%, transparent); stroke-linejoin: round; }
+.world-grid line { stroke: color-mix(in srgb, var(--ink) 9%, transparent); }
+.world-grid line.equator { stroke: color-mix(in srgb, var(--ink) 18%, transparent); }
+.world-center line { stroke: color-mix(in srgb, var(--ink) 45%, transparent); }
+.world-pin path { stroke: #fff; }
+.world-pin.guess path { fill: #2f62b8; }
+.world-pin.answer path { fill: #c2412d; }
+.world-pin-dot { fill: #fff; }
+.mapquiz-line { stroke: var(--ink); fill: none; opacity: .7; }
+.mapquiz-guess-dot { fill: #2f62b8; stroke: #fff; }
+.world-map-zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.world-map-zoom button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.world-map-zoom button:hover { background: var(--soft); }
+.mapquiz-feedback { min-height: 56px; margin: 12px 0; font-size: 15px; line-height: 1.6; }
+.mapquiz-feedback p { margin: 0; }
+.mapquiz-feedback.close strong { color: var(--tone-35664a, #35664a); }
+.mapquiz-feedback.far strong { color: #a23f32; }
+.mapquiz-note { margin-top: 6px !important; padding: 10px 12px; border-left: 3px solid #c2412d; background: var(--soft); border-radius: 0 7px 7px 0; font-size: 14px; }
+.mapquiz-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mapquiz-result { margin-bottom: 14px; }
+.mapquiz-summary { margin: 14px 0 18px; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.mapquiz-summary li { display: grid; grid-template-columns: minmax(0, 1fr) auto 64px; gap: 12px; align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.mapquiz-summary li span:first-child { overflow-wrap: anywhere; }
+.mapquiz-summary li strong { text-align: right; }
+.mapquiz-summary li.close strong { color: var(--tone-35664a, #35664a); }
+.mapquiz-legend { margin: 10px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.preview-panel .world-map { margin-top: 10px; }
+#mapquiz-body { width: 100%; min-height: 320px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .world-map svg { aspect-ratio: 4 / 3; }
+  .mapquiz-prompt strong { font-size: 17px; }
+}
+
 .history-preview { max-height: 40vh; overflow: auto; margin-top: 20px; }
 .history-preview details { padding: 10px 0; border-bottom: 1px solid var(--tone-ddd, #ddd); }
 .history-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
